@@ -1,12 +1,14 @@
 import { Metadata } from 'next';
-import React from 'react';
+import React, { ReactNode } from 'react';
 
 export const metadata: Metadata = {
   title: 'Library - Perplexica',
 };
 
-const Layout = ({ children }: { children: React.ReactNode }) => {
-  return <div>{children}</div>;
-};
+interface LayoutProps {
+  children: ReactNode;
+}
 
-export default Layout;
+export default function Layout({ children }: LayoutProps) {
+  return <div>{children}</div>;
+}

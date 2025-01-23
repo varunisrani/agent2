@@ -38,6 +38,14 @@ import {
   
   const strParser = new StringOutputParser();
   
+  interface VideoResult {
+    img_src: string;
+    url: string;
+    title: string;
+    iframe_src: string;
+    [key: string]: any;
+  }
+  
   const createVideoSearchChain = (llm: BaseChatModel) => {
     return RunnableSequence.from([
       RunnableMap.from({
@@ -56,7 +64,7 @@ import {
           engines: ['youtube'],
         });
   
-        const videos = [];
+        const videos: VideoResult[] = [];
   
         res.results.forEach((result) => {
           if (

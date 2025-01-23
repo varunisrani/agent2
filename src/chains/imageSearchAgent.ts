@@ -38,6 +38,13 @@ import {
   
   const strParser = new StringOutputParser();
   
+  interface ImageResult {
+    img_src: string;
+    url: string;
+    title: string;
+    [key: string]: any;
+  }
+  
   const createImageSearchChain = (llm: BaseChatModel) => {
     return RunnableSequence.from([
       RunnableMap.from({
@@ -56,7 +63,7 @@ import {
           engines: ['bing images', 'google images'],
         });
   
-        const images = [];
+        const images: ImageResult[] = [];
   
         res.results.forEach((result) => {
           if (result.img_src && result.url && result.title) {

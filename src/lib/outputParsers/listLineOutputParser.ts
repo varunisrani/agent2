@@ -1,48 +1,21 @@
-import { BaseOutputParser } from '@langchain/core/output_parsers';
+import { BaseOutputParser } from "langchain/schema/output_parser";
 
-interface LineListOutputParserArgs {
-  key?: string;
-}
+export class ListLineOutputParser extends BaseOutputParser<string[]> {
+  lc_namespace = ["local", "list_line"];
 
-class LineListOutputParser extends BaseOutputParser<string[]> {
-  private key = 'questions';
-
-  constructor(args?: LineListOutputParserArgs) {
-    super();
-    this.key = args.key ?? this.key;
+  static lc_name(): string {
+    return "ListLineOutputParser";
   }
-
-  static lc_name() {
-    return 'LineListOutputParser';
-  }
-
-  lc_namespace = ['langchain', 'output_parsers', 'line_list_output_parser'];
 
   async parse(text: string): Promise<string[]> {
-    const regex = /^(\s*(-|\*|\d+\.\s|\d+\)\s|\u2022)\s*)+/;
-    const startKeyIndex = text.indexOf(`<${this.key}>`);
-    const endKeyIndex = text.indexOf(`</${this.key}>`);
-
-    if (startKeyIndex === -1 && endKeyIndex === -1) {
-      return [];
-    }
-
-    const questionsStartIndex =
-      startKeyIndex === -1 ? 0 : startKeyIndex + `<${this.key}>`.length;
-    const questionsEndIndex = endKeyIndex === -1 ? text.length : endKeyIndex;
-    const lines = text
-      .slice(questionsStartIndex, questionsEndIndex)
-      .trim()
+    // Split by newlines and filter out empty lines
+    return text
       .split('\n')
-      .filter((line) => line.trim() !== '')
-      .map((line) => line.replace(regex, ''));
-
-    return lines;
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
   }
 
   getFormatInstructions(): string {
-    throw new Error('Not implemented.');
+    return "Return your response as a list, with each item on a new line.";
   }
 }
-
-export default LineListOutputParser;

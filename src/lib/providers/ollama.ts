@@ -3,6 +3,25 @@ import { getKeepAlive, getOllamaApiEndpoint } from '../../config';
 import logger from '../../utils/logger';
 import { ChatOllama } from '@langchain/community/chat_models/ollama';
 import axios from 'axios';
+import { ModelProvider } from './types';
+
+interface OllamaModel {
+  name: string;
+  parameters: Record<string, unknown>;
+}
+
+export class OllamaProvider implements ModelProvider {
+  private models: OllamaModel[] = [];
+
+  getAvailableModels(acc: OllamaModel[], model: OllamaModel): OllamaModel[] {
+    // Type-safe implementation
+    return [...acc, model];
+  }
+
+  async loadModels(): Promise<void> {
+    // Implementation
+  }
+}
 
 export const loadOllamaChatModels = async () => {
   const ollamaEndpoint = getOllamaApiEndpoint();

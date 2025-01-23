@@ -4,8 +4,26 @@ import { loadOpenAIChatModels, loadOpenAIEmbeddingsModels } from './openai';
 import { loadAnthropicChatModels } from './anthropic';
 import { loadTransformersEmbeddingsModels } from './transformers';
 import { loadGeminiChatModels, loadGeminiEmbeddingsModels } from './gemini';
+import { Embeddings } from '@langchain/core/embeddings';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 
-const chatModelProviders = {
+interface ModelProvider<T> {
+  [key: string]: {
+    model: T;
+    displayName: string;
+    [key: string]: any;
+  };
+}
+
+interface ChatModelProviders {
+  [key: string]: () => Promise<ModelProvider<BaseChatModel>>;
+}
+
+interface EmbeddingModelProviders {
+  [key: string]: () => Promise<ModelProvider<Embeddings>>;
+}
+
+const chatModelProviders: ChatModelProviders = {
   openai: loadOpenAIChatModels,
   groq: loadGroqChatModels,
   ollama: loadOllamaChatModels,
@@ -13,7 +31,7 @@ const chatModelProviders = {
   gemini: loadGeminiChatModels,
 };
 
-const embeddingModelProviders = {
+const embeddingModelProviders: EmbeddingModelProviders = {
   openai: loadOpenAIEmbeddingsModels,
   local: loadTransformersEmbeddingsModels,
   ollama: loadOllamaEmbeddingsModels,
@@ -21,7 +39,7 @@ const embeddingModelProviders = {
 };
 
 export const getAvailableChatModelProviders = async () => {
-  const models = {};
+  const models: { [key: string]: ModelProvider<BaseChatModel> } = {};
 
   for (const provider in chatModelProviders) {
     const providerModels = await chatModelProviders[provider]();
@@ -36,7 +54,7 @@ export const getAvailableChatModelProviders = async () => {
 };
 
 export const getAvailableEmbeddingModelProviders = async () => {
-  const models = {};
+  const models: { [key: string]: ModelProvider<Embeddings> } = {};
 
   for (const provider in embeddingModelProviders) {
     const providerModels = await embeddingModelProviders[provider]();
@@ -46,4 +64,19 @@ export const getAvailableEmbeddingModelProviders = async () => {
   }
 
   return models;
+};
+
+export const getEmbeddingModel = async (provider: string, model: string): Promise<Embeddings> => {
+  if (!embeddingModelProviders[provider]) {
+    throw new Error(`Invalid embedding model provider: ${provider}`);
+  }
+
+  const providerModels = await embeddingModelProviders[provider]();
+  const embeddingModel = providerModels[model];
+
+  if (!embeddingModel) {
+    throw new Error(`Invalid embedding model: ${model}`);
+  }
+
+  return embeddingModel.model;
 };

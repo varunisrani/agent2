@@ -12,23 +12,24 @@ import MetaSearchAgent, {
   MetaSearchAgentType,
 } from '../search/metaSearchAgent';
 import prompts from '../prompts';
+import { SearchAgents } from '../types/config';
 
-type Message = {
+interface Message {
   messageId: string;
   chatId: string;
   content: string;
-};
+}
 
-type WSMessage = {
+interface WSMessage {
   message: Message;
   optimizationMode: 'speed' | 'balanced' | 'quality';
   type: string;
   focusMode: string;
   history: Array<[string, string]>;
   files: Array<string>;
-};
+}
 
-export const searchHandlers = {
+export const searchHandlers: Record<string, MetaSearchAgent> = {
   webSearch: new MetaSearchAgent({
     activeEngines: [],
     queryGeneratorPrompt: prompts.webSearchRetrieverPrompt,
@@ -144,15 +145,51 @@ const handleEmitterEvents = (
   });
 };
 
+interface Source {
+  title: string;
+  url: string;
+  content: string;
+  metadata?: Record<string, any>;
+}
+
+export class MessageHandler {
+  private readonly agents: SearchAgents;
+  private readonly sources: Source[] = [];
+
+  constructor(agents: SearchAgents) {
+    this.agents = agents;
+  }
+
+  getSources(): Source[] {
+    return this.sources;
+  }
+
+  clearSources(): void {
+    this.sources.length = 0;
+  }
+
+  addSource(source: Source): void {
+    this.sources.push(source);
+  }
+
+  async handleSearch(type: string): Promise<void> {
+    const agent = this.agents[type];
+    if (!agent) {
+      throw new Error(`Unknown search type: ${type}`);
+    }
+    // Implementation using this.addSource() to manage sources
+  }
+}
+
 export const handleMessage = async (
   message: string,
   ws: WebSocket,
   llm: BaseChatModel,
   embeddings: Embeddings,
-) => {
+): Promise<void> => {
   try {
-    const parsedWSMessage = JSON.parse(message) as WSMessage;
-    const parsedMessage = parsedWSMessage.message;
+    const parsedWSMessage: WSMessage = JSON.parse(message);
+    const { message: parsedMessage, optimizationMode, focusMode, history, files } = parsedWSMessage;
 
     if (parsedWSMessage.files.length > 0) {
       /* TODO: Implement uploads in other classes/single meta class system*/
@@ -172,101 +209,84 @@ export const handleMessage = async (
         }),
       );
 
-    const history: BaseMessage[] = parsedWSMessage.history.map((msg) => {
-      if (msg[0] === 'human') {
-        return new HumanMessage({
-          content: msg[1],
-        });
-      } else {
-        return new AIMessage({
-          content: msg[1],
-        });
-      }
+    const searchHandler = searchHandlers[focusMode];
+    if (!searchHandler) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        data: 'Invalid focus mode',
+        key: 'INVALID_FOCUS_MODE'
+      }));
+      return;
+    }
+
+    const messageHistory: BaseMessage[] = history.map(([role, content]) => {
+      return role === 'human' 
+        ? new HumanMessage({ content }) 
+        : new AIMessage({ content });
     });
 
-    if (parsedWSMessage.type === 'message') {
-      const handler: MetaSearchAgentType =
-        searchHandlers[parsedWSMessage.focusMode];
-
-      if (handler) {
-        try {
-          const emitter = await handler.searchAndAnswer(
-            parsedMessage.content,
-            history,
-            llm,
-            embeddings,
-            parsedWSMessage.optimizationMode,
-            parsedWSMessage.files,
-          );
-
-          handleEmitterEvents(emitter, ws, aiMessageId, parsedMessage.chatId);
-
-          const chat = await db.query.chats.findFirst({
-            where: eq(chats.id, parsedMessage.chatId),
-          });
-
-          if (!chat) {
-            await db
-              .insert(chats)
-              .values({
-                id: parsedMessage.chatId,
-                title: parsedMessage.content,
-                createdAt: new Date().toString(),
-                focusMode: parsedWSMessage.focusMode,
-                files: parsedWSMessage.files.map(getFileDetails),
-              })
-              .execute();
-          }
-
-          const messageExists = await db.query.messages.findFirst({
-            where: eq(messagesSchema.messageId, humanMessageId),
-          });
-
-          if (!messageExists) {
-            await db
-              .insert(messagesSchema)
-              .values({
-                content: parsedMessage.content,
-                chatId: parsedMessage.chatId,
-                messageId: humanMessageId,
-                role: 'user',
-                metadata: JSON.stringify({
-                  createdAt: new Date(),
-                }),
-              })
-              .execute();
-          } else {
-            await db
-              .delete(messagesSchema)
-              .where(
-                and(
-                  gt(messagesSchema.id, messageExists.id),
-                  eq(messagesSchema.chatId, parsedMessage.chatId),
-                ),
-              )
-              .execute();
-          }
-        } catch (err) {
-          console.log(err);
-        }
-      } else {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            data: 'Invalid focus mode',
-            key: 'INVALID_FOCUS_MODE',
-          }),
-        );
-      }
-    }
-  } catch (err) {
-    ws.send(
-      JSON.stringify({
-        type: 'error',
-        data: 'Invalid message format',
-        key: 'INVALID_FORMAT',
-      }),
+    const emitter = await searchHandler.searchAndAnswer(
+      parsedMessage.content,
+      messageHistory,
+      llm,
+      embeddings,
+      optimizationMode,
+      files
     );
-    logger.error(`Failed to handle message: ${err}`);
+
+    handleEmitterEvents(emitter, ws, aiMessageId, parsedMessage.chatId);
+
+    const chat = await db.query.chats.findFirst({
+      where: eq(chats.id, parsedMessage.chatId),
+    });
+
+    if (!chat) {
+      await db
+        .insert(chats)
+        .values({
+          id: parsedMessage.chatId,
+          title: parsedMessage.content,
+          createdAt: new Date().toString(),
+          focusMode: focusMode,
+          files: parsedWSMessage.files.map(getFileDetails),
+        })
+        .execute();
+    }
+
+    const messageExists = await db.query.messages.findFirst({
+      where: eq(messagesSchema.messageId, humanMessageId),
+    });
+
+    if (!messageExists) {
+      await db
+        .insert(messagesSchema)
+        .values({
+          content: parsedMessage.content,
+          chatId: parsedMessage.chatId,
+          messageId: humanMessageId,
+          role: 'user',
+          metadata: JSON.stringify({
+            createdAt: new Date(),
+          }),
+        })
+        .execute();
+    } else {
+      await db
+        .delete(messagesSchema)
+        .where(
+          and(
+            gt(messagesSchema.id, messageExists.id),
+            eq(messagesSchema.chatId, parsedMessage.chatId),
+          ),
+        )
+        .execute();
+    }
+  } catch (error) {
+    logger.error('Error handling message:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      data: 'Failed to process message',
+      key: 'MESSAGE_PROCESSING_ERROR'
+    }));
   }
 };

@@ -13,8 +13,8 @@ import {
 } from '@langchain/core/runnables';
 import { BaseMessage } from '@langchain/core/messages';
 import { StringOutputParser } from '@langchain/core/output_parsers';
-import LineListOutputParser from '../lib/outputParsers/listLineOutputParser';
-import LineOutputParser from '../lib/outputParsers/lineOutputParser';
+import { ListLineOutputParser } from "../lib/outputParsers/listLineOutputParser";
+import { LineOutputParser } from "../lib/outputParsers/lineOutputParser";
 import { getDocumentsFromLinks } from '../utils/documents';
 import { Document } from 'langchain/document';
 import { searchSearxng } from '../lib/searxng';
@@ -52,12 +52,19 @@ type BasicChainInput = {
   query: string;
 };
 
+interface SearchResult {
+  query: string;
+  docs: Document<Record<string, any>>[];
+}
+
 class MetaSearchAgent implements MetaSearchAgentType {
   private config: Config;
-  private strParser = new StringOutputParser();
+  private strParser: StringOutputParser;
+  private docs: Document<Record<string, any>>[] = [];
 
   constructor(config: Config) {
     this.config = config;
+    this.strParser = new StringOutputParser();
   }
 
   private async createSearchRetrieverChain(llm: BaseChatModel) {
@@ -68,7 +75,7 @@ class MetaSearchAgent implements MetaSearchAgentType {
       llm,
       this.strParser,
       RunnableLambda.from(async (input: string) => {
-        const linksOutputParser = new LineListOutputParser({
+        const linksOutputParser = new ListLineOutputParser({
           key: 'links',
         });
 
@@ -76,13 +83,13 @@ class MetaSearchAgent implements MetaSearchAgentType {
           key: 'question',
         });
 
-        const links = await linksOutputParser.parse(input);
-        let question = this.config.summarizer
+        const links: string[] = await linksOutputParser.parse(input);
+        let question: string = this.config.summarizer
           ? await questionOutputParser.parse(input)
           : input;
 
         if (question === 'not_needed') {
-          return { query: '', docs: [] };
+          return { query: '', docs: [] } as SearchResult;
         }
 
         if (links.length > 0) {
@@ -90,13 +97,11 @@ class MetaSearchAgent implements MetaSearchAgentType {
             question = 'summarize';
           }
 
-          let docs = [];
+          const docs: Document<Record<string, any>>[] = [];
+          const linkDocs: Document<Record<string, any>>[] = await getDocumentsFromLinks({ links });
+          const docGroups: Document<Record<string, any>>[] = [];
 
-          const linkDocs = await getDocumentsFromLinks({ links });
-
-          const docGroups: Document[] = [];
-
-          linkDocs.map((doc) => {
+          linkDocs.forEach((doc) => {
             const URLDocExists = docGroups.find(
               (d) =>
                 d.metadata.url === doc.metadata.url &&
@@ -201,7 +206,7 @@ class MetaSearchAgent implements MetaSearchAgentType {
             }),
           );
 
-          return { query: question, docs: docs };
+          return { query: question, docs: docs } as SearchResult;
         } else {
           const res = await searchSearxng(question, {
             language: 'en',
@@ -224,7 +229,7 @@ class MetaSearchAgent implements MetaSearchAgentType {
               }),
           );
 
-          return { query: question, docs: documents };
+          return { query: question, docs: documents } as SearchResult;
         }
       }),
     ]);
@@ -246,7 +251,7 @@ class MetaSearchAgent implements MetaSearchAgentType {
             input.chat_history,
           );
 
-          let docs: Document[] | null = null;
+          let docs: Document<Record<string, any>>[] | null = null;
           let query = input.query;
 
           if (this.config.searchWeb) {
@@ -291,7 +296,7 @@ class MetaSearchAgent implements MetaSearchAgentType {
 
   private async rerankDocs(
     query: string,
-    docs: Document[],
+    docs: Document<Record<string, any>>[],
     fileIds: string[],
     embeddings: Embeddings,
     optimizationMode: 'speed' | 'balanced' | 'quality',
@@ -416,13 +421,16 @@ class MetaSearchAgent implements MetaSearchAgentType {
     }
   }
 
-  private processDocs(docs: Document[]) {
-    return docs
-      .map(
-        (_, index) =>
-          `${index + 1}. ${docs[index].metadata.title} ${docs[index].pageContent}`,
-      )
-      .join('\n');
+  private async processDocs(docs: (Document<Record<string, any>> | Document<{ title: any; url: string; }>)[] | undefined): Promise<string> {
+    if (!docs) return '';
+    this.docs = docs as Document<Record<string, any>>[];
+    return this.formatResults(0);
+  }
+
+  private async formatResults(index: number): Promise<string> {
+    if (index >= this.docs.length) return '';
+    const doc = this.docs[index];
+    return `[${index + 1}] ${doc.metadata.title || 'Untitled'} (${doc.metadata.url})\n${doc.pageContent}\n\n`;
   }
 
   private async handleStream(
