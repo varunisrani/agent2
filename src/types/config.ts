@@ -1,3 +1,5 @@
+import { MetaSearchAgentType } from '../search/metaSearchAgent';
+
 export interface ConfigType {
   chatModelProviders: Record<string, any>;
   embeddingModelProviders: Record<string, any>;
@@ -9,11 +11,11 @@ export interface ConfigType {
 }
 
 export interface SearchAgents {
-  webSearch: MetaSearchAgent;
-  academicSearch: MetaSearchAgent;
-  writingAssistant: MetaSearchAgent;
-  wolframAlphaSearch: MetaSearchAgent;
-  youtubeSearch: MetaSearchAgent;
-  redditSearch: MetaSearchAgent;
-  [key: string]: MetaSearchAgent;  // Add index signature
+  webSearch: MetaSearchAgentType;
+  academicSearch: MetaSearchAgentType;
+  writingAssistant: MetaSearchAgentType;
+  wolframAlphaSearch: MetaSearchAgentType;
+  youtubeSearch: MetaSearchAgentType;
+  redditSearch: MetaSearchAgentType;
+  [key: string]: MetaSearchAgentType;  // Add index signature
 } 

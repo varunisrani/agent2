@@ -31,66 +31,45 @@ export const getDocumentsFromLinks = async ({ links }: { links: string[] }) => {
             .replace(/\s+/g, ' ')
             .trim();
 
-          const splittedText = await splitter.splitText(parsedText);
-          const title = 'PDF Document';
-
-          const linkDocs = splittedText.map((text) => {
-            return new Document({
-              pageContent: text,
-              metadata: {
-                title: title,
-                url: link,
-              },
-            });
+          const splitDocs = await splitter.createDocuments([parsedText]);
+          docs.push(
+            ...splitDocs.map(
+              (doc) =>
+                new Document({
+                  pageContent: doc.pageContent,
+                  metadata: {
+                    url: link,
+                    title: pdfText.info?.Title || link,
+                  },
+                }),
+            ),
+          );
+        } else {
+          const text = htmlToText(res.data.toString(), {
+            wordwrap: false,
+            selectors: [
+              { selector: 'a', options: { ignoreHref: true } },
+              { selector: 'img', format: 'skip' },
+            ],
           });
 
-          docs.push(...linkDocs);
-          return;
+          const splitDocs = await splitter.createDocuments([text]);
+          docs.push(
+            ...splitDocs.map(
+              (doc) =>
+                new Document({
+                  pageContent: doc.pageContent,
+                  metadata: {
+                    url: link,
+                    title: link,
+                  },
+                }),
+            ),
+          );
         }
-
-        const parsedText = htmlToText(res.data.toString('utf8'), {
-          selectors: [
-            {
-              selector: 'a',
-              options: {
-                ignoreHref: true,
-              },
-            },
-          ],
-        })
-          .replace(/(\r\n|\n|\r)/gm, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-
-        const splittedText = await splitter.splitText(parsedText);
-        const title = res.data
-          .toString('utf8')
-          .match(/<title>(.*?)<\/title>/)?.[1];
-
-        const linkDocs = splittedText.map((text) => {
-          return new Document({
-            pageContent: text,
-            metadata: {
-              title: title || link,
-              url: link,
-            },
-          });
-        });
-
-        docs.push(...linkDocs);
       } catch (err) {
-        logger.error(
-          `Error at generating documents from links: ${err.message}`,
-        );
-        docs.push(
-          new Document({
-            pageContent: `Failed to retrieve content from the link: ${err.message}`,
-            metadata: {
-              title: 'Failed to retrieve content',
-              url: link,
-            },
-          }),
-        );
+        logger.error(`Error processing link ${link}: ${err instanceof Error ? err.message : String(err)}`);
+        // Continue with other links even if one fails
       }
     }),
   );

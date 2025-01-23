@@ -4,18 +4,48 @@ import logger from '../../utils/logger';
 import { ChatOllama } from '@langchain/community/chat_models/ollama';
 import axios from 'axios';
 import { ModelProvider } from './types';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { Embeddings } from '@langchain/core/embeddings';
 
 interface OllamaModel {
   name: string;
   parameters: Record<string, unknown>;
 }
 
+interface OllamaModelResponse {
+  model: string;
+  name: string;
+}
+
+interface ChatModelMap {
+  [key: string]: {
+    displayName: string;
+    model: ChatOllama;
+  };
+}
+
+interface EmbeddingsModelMap {
+  [key: string]: {
+    displayName: string;
+    model: OllamaEmbeddings;
+  };
+}
+
 export class OllamaProvider implements ModelProvider {
   private models: OllamaModel[] = [];
+  private chatModels: BaseChatModel[] = [];
+  private embeddingModels: Embeddings[] = [];
 
-  getAvailableModels(acc: OllamaModel[], model: OllamaModel): OllamaModel[] {
-    // Type-safe implementation
+  getAvailableModels<T>(acc: T[], model: T): T[] {
     return [...acc, model];
+  }
+
+  getChatModels(): BaseChatModel[] {
+    return this.chatModels;
+  }
+
+  getEmbeddingModels(): Embeddings[] {
+    return this.embeddingModels;
   }
 
   async loadModels(): Promise<void> {
@@ -38,7 +68,7 @@ export const loadOllamaChatModels = async () => {
 
     const { models: ollamaModels } = response.data;
 
-    const chatModels = ollamaModels.reduce((acc, model) => {
+    const chatModels = ollamaModels.reduce((acc: ChatModelMap, model: OllamaModelResponse) => {
       acc[model.model] = {
         displayName: model.name,
         model: new ChatOllama({
@@ -54,7 +84,7 @@ export const loadOllamaChatModels = async () => {
 
     return chatModels;
   } catch (err) {
-    logger.error(`Error loading Ollama models: ${err}`);
+    logger.error(`Error loading Ollama models: ${err instanceof Error ? err.message : String(err)}`);
     return {};
   }
 };
@@ -73,7 +103,7 @@ export const loadOllamaEmbeddingsModels = async () => {
 
     const { models: ollamaModels } = response.data;
 
-    const embeddingsModels = ollamaModels.reduce((acc, model) => {
+    const embeddingsModels = ollamaModels.reduce((acc: EmbeddingsModelMap, model: OllamaModelResponse) => {
       acc[model.model] = {
         displayName: model.name,
         model: new OllamaEmbeddings({
@@ -87,7 +117,7 @@ export const loadOllamaEmbeddingsModels = async () => {
 
     return embeddingsModels;
   } catch (err) {
-    logger.error(`Error loading Ollama embeddings model: ${err}`);
+    logger.error(`Error loading Ollama embeddings model: ${err instanceof Error ? err.message : String(err)}`);
     return {};
   }
 };

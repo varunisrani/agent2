@@ -14,6 +14,11 @@ import MetaSearchAgent, {
 import prompts from '../prompts';
 import { SearchAgents } from '../types/config';
 
+interface Source {
+  title: string;
+  url: string;
+}
+
 interface Message {
   messageId: string;
   chatId: string;
@@ -93,7 +98,7 @@ const handleEmitterEvents = (
   chatId: string,
 ) => {
   let recievedMessage = '';
-  let sources = [];
+  let sources: Source[] = [];
 
   emitter.on('data', (data) => {
     const parsedData = JSON.parse(data);
@@ -110,11 +115,11 @@ const handleEmitterEvents = (
       ws.send(
         JSON.stringify({
           type: 'sources',
-          data: parsedData.data,
+          data: parsedData.data as Source[],
           messageId: messageId,
         }),
       );
-      sources = parsedData.data;
+      sources = parsedData.data as Source[];
     }
   });
   emitter.on('end', () => {
@@ -144,13 +149,6 @@ const handleEmitterEvents = (
     );
   });
 };
-
-interface Source {
-  title: string;
-  url: string;
-  content: string;
-  metadata?: Record<string, any>;
-}
 
 export class MessageHandler {
   private readonly agents: SearchAgents;

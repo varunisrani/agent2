@@ -1,5 +1,5 @@
 import { RunnableSequence, RunnableMap } from '@langchain/core/runnables';
-import ListLineOutputParser from '../lib/outputParsers/listLineOutputParser';
+import { ListLineOutputParser } from '../lib/outputParsers/listLineOutputParser';
 import { PromptTemplate } from '@langchain/core/prompts';
 import formatChatHistoryAsString from '../utils/formatHistory';
 import { BaseMessage } from '@langchain/core/messages';
@@ -32,21 +32,22 @@ const outputParser = new ListLineOutputParser({
 });
 
 const createSuggestionGeneratorChain = (llm: BaseChatModel) => {
-  return RunnableSequence.from([
+  const chain = RunnableSequence.from([
     RunnableMap.from({
       chat_history: (input: SuggestionGeneratorInput) =>
         formatChatHistoryAsString(input.chat_history),
     }),
     PromptTemplate.fromTemplate(suggestionGeneratorPrompt),
     llm,
-    outputParser,
   ]);
+
+  return chain.pipe(outputParser);
 };
 
-const generateSuggestions = (
+const generateSuggestions = async (
   input: SuggestionGeneratorInput,
   llm: BaseChatModel,
-) => {
+): Promise<string[]> => {
   (llm as unknown as ChatOpenAI).temperature = 0;
   const suggestionGeneratorChain = createSuggestionGeneratorChain(llm);
   return suggestionGeneratorChain.invoke(input);

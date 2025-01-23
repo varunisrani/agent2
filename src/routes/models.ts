@@ -5,6 +5,19 @@ import {
   getAvailableEmbeddingModelProviders,
 } from '../lib/providers';
 
+interface ModelInfo {
+  displayName: string;
+  model?: any;  // Making model optional
+}
+
+interface ModelProvider {
+  [key: string]: ModelInfo;
+}
+
+interface ModelProviders {
+  [key: string]: ModelProvider;
+}
+
 const router = express.Router();
 
 router.get('/', async (req, res) => {
@@ -14,22 +27,34 @@ router.get('/', async (req, res) => {
       getAvailableEmbeddingModelProviders(),
     ]);
 
+    const sanitizedChatProviders: ModelProviders = {};
+    const sanitizedEmbeddingProviders: ModelProviders = {};
+
+    // Create new objects without the model property for chat providers
     Object.keys(chatModelProviders).forEach((provider) => {
+      sanitizedChatProviders[provider] = {};
       Object.keys(chatModelProviders[provider]).forEach((model) => {
-        delete chatModelProviders[provider][model].model;
+        const { model: _, ...rest } = chatModelProviders[provider][model];
+        sanitizedChatProviders[provider][model] = rest;
       });
     });
 
+    // Create new objects without the model property for embedding providers
     Object.keys(embeddingModelProviders).forEach((provider) => {
+      sanitizedEmbeddingProviders[provider] = {};
       Object.keys(embeddingModelProviders[provider]).forEach((model) => {
-        delete embeddingModelProviders[provider][model].model;
+        const { model: _, ...rest } = embeddingModelProviders[provider][model];
+        sanitizedEmbeddingProviders[provider][model] = rest;
       });
     });
 
-    res.status(200).json({ chatModelProviders, embeddingModelProviders });
+    res.json({ 
+      chatModelProviders: sanitizedChatProviders, 
+      embeddingModelProviders: sanitizedEmbeddingProviders 
+    });
   } catch (err) {
-    res.status(500).json({ message: 'An error has occurred.' });
-    logger.error(err.message);
+    logger.error(`Error getting models: ${err instanceof Error ? err.message : String(err)}`);
+    res.status(500).json({ error: 'Failed to get models' });
   }
 });
 

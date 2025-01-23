@@ -101,7 +101,7 @@ class MetaSearchAgent implements MetaSearchAgentType {
           const linkDocs: Document<Record<string, any>>[] = await getDocumentsFromLinks({ links });
           const docGroups: Document<Record<string, any>>[] = [];
 
-          linkDocs.forEach((doc) => {
+          linkDocs.forEach((doc: Document<Record<string, any>>) => {
             const URLDocExists = docGroups.find(
               (d) =>
                 d.metadata.url === doc.metadata.url &&
@@ -316,7 +316,7 @@ class MetaSearchAgent implements MetaSearchAgentType {
         const embeddings = JSON.parse(fs.readFileSync(embeddingsPath, 'utf8'));
 
         const fileSimilaritySearchObject = content.contents.map(
-          (c: string, i) => {
+          (c: string, i: number) => {
             return {
               fileName: content.title,
               content: c,
@@ -353,7 +353,7 @@ class MetaSearchAgent implements MetaSearchAgentType {
           });
         });
 
-        const similarity = filesData.map((fileData, i) => {
+        const similarity = filesData.map((fileData, i: number) => {
           const sim = computeSimilarity(queryEmbedding, fileData.embeddings);
 
           return {
@@ -402,7 +402,7 @@ class MetaSearchAgent implements MetaSearchAgentType {
 
       docEmbeddings.push(...filesData.map((fileData) => fileData.embeddings));
 
-      const similarity = docEmbeddings.map((docEmbedding, i) => {
+      const similarity = docEmbeddings.map((docEmbedding, i: number) => {
         const sim = computeSimilarity(queryEmbedding, docEmbedding);
 
         return {
