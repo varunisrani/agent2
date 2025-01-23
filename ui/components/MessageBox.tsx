@@ -11,14 +11,22 @@ import {
   StopCircle,
   Layers3,
   Plus,
+  FileDown,
 } from 'lucide-react';
 import Markdown from 'markdown-to-jsx';
+import jsPDF from 'jspdf';
 import Copy from './MessageActions/Copy';
 import Rewrite from './MessageActions/Rewrite';
 import MessageSources from './MessageSources';
 import SearchImages from './SearchImages';
 import SearchVideos from './SearchVideos';
 import { useSpeech } from 'react-text-to-speech';
+
+const stripMarkdownAndCitations = (text: string) => {
+  let cleanText = text.replace(/[#*_~`]/g, '');
+  cleanText = cleanText.replace(/\[\d+\]/g, '');
+  return cleanText;
+};
 
 const MessageBox = ({
   message,
@@ -64,6 +72,103 @@ const MessageBox = ({
   }, [message.content, message.sources, message.role]);
 
   const { speechStatus, start, stop } = useSpeech({ text: speechMessage });
+
+  const exportMessageAsPDF = () => {
+    const pdf = new jsPDF();
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const margin = 20;
+    const lineHeight = 7;
+    
+    pdf.setFontSize(16);
+    pdf.text('Chat Message', margin, margin);
+    
+    pdf.setFontSize(10);
+    const timestamp = new Date().toLocaleString();
+    pdf.text(`Generated on: ${timestamp}`, margin, margin + lineHeight);
+    
+    pdf.setFontSize(12);
+    pdf.text(`Role: ${message.role}`, margin, margin + lineHeight * 3);
+    
+    pdf.setFontSize(11);
+    const cleanContent = stripMarkdownAndCitations(message.content);
+    const splitContent = pdf.splitTextToSize(cleanContent, pageWidth - margin * 2);
+    pdf.text(splitContent, margin, margin + lineHeight * 5);
+    
+    if (message.sources && message.sources.length > 0) {
+      let yPosition = margin + lineHeight * (7 + splitContent.length);
+      
+      pdf.setFontSize(12);
+      pdf.text('Sources:', margin, yPosition);
+      
+      pdf.setFontSize(10);
+      message.sources.forEach((source, index) => {
+        yPosition += lineHeight;
+        if (yPosition > pdf.internal.pageSize.getHeight() - margin) {
+          pdf.addPage();
+          yPosition = margin;
+        }
+        const sourceText = `${index + 1}. ${source.metadata?.url || 'N/A'}`;
+        pdf.text(sourceText, margin, yPosition);
+      });
+    }
+    
+    pdf.save(`message-${message.messageId}.pdf`);
+  };
+
+  const exportChatAsPDF = () => {
+    const pdf = new jsPDF();
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 20;
+    const lineHeight = 7;
+    let yPosition = margin;
+    
+    pdf.setFontSize(16);
+    pdf.text('Chat History', margin, yPosition);
+    yPosition += lineHeight * 2;
+    
+    pdf.setFontSize(10);
+    const timestamp = new Date().toLocaleString();
+    pdf.text(`Generated on: ${timestamp}`, margin, yPosition);
+    yPosition += lineHeight * 2;
+    
+    history.forEach((msg, index) => {
+      if (yPosition > pageHeight - margin * 2) {
+        pdf.addPage();
+        yPosition = margin;
+      }
+      
+      pdf.setFontSize(12);
+      pdf.text(`Message ${index + 1} (${msg.role})`, margin, yPosition);
+      yPosition += lineHeight * 1.5;
+      
+      pdf.setFontSize(11);
+      const cleanContent = stripMarkdownAndCitations(msg.content);
+      const splitContent = pdf.splitTextToSize(cleanContent, pageWidth - margin * 2);
+      pdf.text(splitContent, margin, yPosition);
+      yPosition += lineHeight * (splitContent.length + 1);
+      
+      if (msg.sources && msg.sources.length > 0) {
+        pdf.setFontSize(10);
+        pdf.text('Sources:', margin, yPosition);
+        yPosition += lineHeight;
+        
+        msg.sources.forEach((source, sourceIndex) => {
+          if (yPosition > pageHeight - margin) {
+            pdf.addPage();
+            yPosition = margin;
+          }
+          const sourceText = `${sourceIndex + 1}. ${source.metadata?.url || 'N/A'}`;
+          pdf.text(sourceText, margin, yPosition);
+          yPosition += lineHeight;
+        });
+      }
+      
+      yPosition += lineHeight * 2;
+    });
+    
+    pdf.save('chat-history.pdf');
+  };
 
   return (
     <div>
@@ -116,9 +221,6 @@ const MessageBox = ({
               {loading && isLast ? null : (
                 <div className="flex flex-row items-center justify-between w-full text-black dark:text-white py-4 -mx-2">
                   <div className="flex flex-row items-center space-x-1">
-                    {/*  <button className="p-2 text-black/70 dark:text-white/70 rounded-xl hover:bg-light-secondary dark:hover:bg-dark-secondary transition duration-200 hover:text-black text-black dark:hover:text-white">
-                      <Share size={18} />
-                    </button> */}
                     <Rewrite rewrite={rewrite} messageId={message.messageId} />
                   </div>
                   <div className="flex flex-row items-center space-x-1">
@@ -139,6 +241,23 @@ const MessageBox = ({
                         <Volume2 size={18} />
                       )}
                     </button>
+                    <button
+                      onClick={exportMessageAsPDF}
+                      title="Export message as PDF"
+                      className="p-2 text-black/70 dark:text-white/70 rounded-xl hover:bg-light-secondary dark:hover:bg-dark-secondary transition duration-200 hover:text-black dark:hover:text-white"
+                    >
+                      <FileDown size={18} />
+                    </button>
+                    {isLast && (
+                      <button
+                        onClick={exportChatAsPDF}
+                        title="Export entire chat as PDF"
+                        className="p-2 text-black/70 dark:text-white/70 rounded-xl hover:bg-light-secondary dark:hover:bg-dark-secondary transition duration-200 hover:text-black dark:hover:text-white flex items-center"
+                      >
+                        <FileDown size={18} />
+                        <span className="ml-1 text-xs">All</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               )}

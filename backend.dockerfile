@@ -2,16 +2,28 @@ FROM node:18-slim
 
 WORKDIR /home/perplexica
 
-COPY src /home/perplexica/src
-COPY tsconfig.json /home/perplexica/
-COPY drizzle.config.ts /home/perplexica/
-COPY package.json /home/perplexica/
-COPY yarn.lock /home/perplexica/
+# Copy package files first for better caching
+COPY package.json yarn.lock ./
 
-RUN mkdir /home/perplexica/data
-RUN mkdir /home/perplexica/uploads
+# Install dependencies
+RUN yarn install
 
-RUN yarn install --frozen-lockfile --network-timeout 600000
-RUN yarn build
+# Copy all TypeScript config and source files
+COPY tsconfig.json .
+COPY drizzle.config.ts .
+COPY src/ src/
 
+# Create necessary directories
+RUN mkdir -p data uploads dist
+
+# Build TypeScript
+RUN yarn tsc
+
+# Debug: List contents of directories
+RUN echo "Contents of root directory:" && \
+    ls -la && \
+    echo "Contents of dist directory:" && \
+    ls -la dist/
+
+# Start the application
 CMD ["yarn", "start"]

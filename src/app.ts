@@ -24,7 +24,7 @@ app.get('/api', (_, res) => {
 });
 
 server.listen(port, () => {
-  logger.info(`Server is running on port ${port}`);
+  logger.info(`Server is running on portttttttttttttyyyyyy ${port}`);
 });
 
 startWebSocketServer(server);
