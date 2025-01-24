@@ -11,26 +11,15 @@ import { Fragment } from 'react';
 const OptimizationModes = [
   {
     key: 'speed',
-    title: 'Speed',
-    description: 'Prioritize speed and get the quickest possible answer.',
+    title: 'Speed', 
+    description: 'Quick market research insights for time-sensitive decisions.',
     icon: <Zap size={20} className="text-[#FF9800]" />,
   },
   {
     key: 'balanced',
     title: 'Balanced',
-    description: 'Find the right balance between speed and accuracy',
+    description: 'Comprehensive market analysis with optimal research depth',
     icon: <Sliders size={20} className="text-[#4CAF50]" />,
-  },
-  {
-    key: 'quality',
-    title: 'Quality (Soon)',
-    description: 'Get the most thorough and accurate answer',
-    icon: (
-      <Star
-        size={16}
-        className="text-[#2196F3] dark:text-[#BBDEFB] fill-[#BBDEFB] dark:fill-[#2196F3]"
-      />
-    ),
   },
 ];
 

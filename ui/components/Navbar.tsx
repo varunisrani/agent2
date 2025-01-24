@@ -77,15 +77,6 @@ const Navbar = ({
           <span className="text-xs font-medium">Pro Mode</span>
         </a>
 
-        {/* Company Form Button */}
-        <a
-          href="/company-form"
-          className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 transition cursor-pointer"
-        >
-          <IconComponent icon={Building} size={16} />
-          <span className="text-xs font-medium">Company</span>
-        </a>
-
         <div className="active:scale-95 transition duration-100 cursor-pointer">
           <IconComponent icon={Share} />
         </div>

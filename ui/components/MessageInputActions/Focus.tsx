@@ -24,22 +24,10 @@ const focusModes = [
     icon: <Globe size={20} />,
   },
   {
-    key: 'academicSearch',
-    title: 'Academic',
-    description: 'Search in published academic papers',
-    icon: <SwatchBook size={20} />,
-  },
-  {
     key: 'writingAssistant',
     title: 'Writing',
     description: 'Chat without searching the web',
     icon: <Pencil size={16} />,
-  },
-  {
-    key: 'wolframAlphaSearch',
-    title: 'Wolfram Alpha',
-    description: 'Computational knowledge engine',
-    icon: <BadgePercent size={20} />,
   },
   {
     key: 'youtubeSearch',

@@ -1,0 +1,27 @@
+<svg width="1080" height="1080" viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1080" height="1080" fill="#FFF5E6"/>
+  
+  <!-- Title "Testimonial" -->
+  <text x="540" y="280" font-family="Arial Black, sans-serif" font-size="90" font-weight="900" text-anchor="middle" fill="#1B365D">
+    Testimonial
+  </text>
+
+  <!-- Author name "Rakhi sawant" -->
+  <text x="540" y="380" font-family="Arial, sans-serif" font-size="45" text-anchor="middle" fill="#333333">
+    Rakhi sawant
+  </text>
+
+  <!-- Testimonial Box -->
+  <rect x="140" y="460" width="800" height="400" rx="10" fill="#E9967A"/>
+  
+  <!-- Testimonial Text -->
+  <text x="190" y="540" font-family="Arial, sans-serif" font-size="36" fill="white">
+    <tspan x="190" y="540">Anvil Consultant is nothing but the best. They</tspan>
+    <tspan x="190" y="590">go above and beyond your expectation. They</tspan>
+    <tspan x="190" y="640">always try any kind of approach to get valuable</tspan>
+    <tspan x="190" y="690">results.</tspan>
+    <tspan x="190" y="760">If you're looking for a consultant company,</tspan>
+    <tspan x="190" y="810">please consider them. I highly recommend it!</tspan>
+  </text>
+</svg> 

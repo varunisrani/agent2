@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { BookOpenText, Home, Search, SquarePen, Settings, BarChart2, Building } from 'lucide-react';
+import { BookOpenText, Home, Search, SquarePen, Settings, BarChart2, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import { useSelectedLayoutSegments } from 'next/navigation';
 import React, { useState, type ReactNode } from 'react';
@@ -16,7 +16,6 @@ const VerticalIconContainer = ({ children }: { children: ReactNode }) => {
 
 const Sidebar = ({ children }: { children: React.ReactNode }) => {
   const segments = useSelectedLayoutSegments();
-
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const navLinks = [
@@ -25,6 +24,12 @@ const Sidebar = ({ children }: { children: React.ReactNode }) => {
       href: '/',
       active: segments.length === 0 || segments.includes('c'),
       label: 'Home',
+    },
+    {
+      icon: BarChart2,
+      href: '/pro-mode',
+      active: segments.includes('pro-mode'),
+      label: 'Pro Mode',
     },
     {
       icon: Search,
@@ -36,19 +41,13 @@ const Sidebar = ({ children }: { children: React.ReactNode }) => {
       icon: BookOpenText,
       href: '/library',
       active: segments.includes('library'),
-      label: 'Library',
+      label: 'History',
     },
     {
-      icon: BarChart2,
-      href: '/pro-mode',
-      active: segments.includes('pro-mode'),
-      label: 'Pro Mode',
-    },
-    {
-      icon: Building,
-      href: '/company-form',
-      active: segments.includes('company-form'),
-      label: 'Company',
+      icon: MessageSquare,
+      href: '/chat',
+      active: segments.includes('chat'),
+      label: 'Chat',
     },
   ];
 
