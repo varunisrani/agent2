@@ -1,5 +1,6 @@
-import { BaseOutputParser } from "langchain/schema/output_parser";
-import { Callbacks } from "langchain/callbacks";
+import { BaseOutputParser } from "@langchain/core/output_parsers";
+import { RunnableConfig } from "@langchain/core/runnables";
+import { BaseMessageChunk, MessageContent, MessageContentText } from "@langchain/core/messages";
 
 export class ListLineOutputParser extends BaseOutputParser<string[]> {
   lc_namespace = ["local", "list_line"];
@@ -14,7 +15,35 @@ export class ListLineOutputParser extends BaseOutputParser<string[]> {
     return "ListLineOutputParser";
   }
 
-  async parse(text: string, callbacks?: Callbacks): Promise<string[]> {
+  async invoke(input: BaseMessageChunk | string, options?: RunnableConfig): Promise<string[]> {
+    const text = typeof input === 'string' ? input : this.extractText(input);
+    return this.parse(text, options?.callbacks);
+  }
+
+  private isTextContent(content: MessageContent): content is string | MessageContentText {
+    return typeof content === 'string' || 
+           (typeof content === 'object' && 'type' in content && content.type === 'text');
+  }
+
+  private extractText(message: BaseMessageChunk): string {
+    if (typeof message.content === 'string') {
+      return message.content;
+    }
+    // Handle complex message content by concatenating all text parts
+    if (Array.isArray(message.content)) {
+      return message.content
+        .filter(this.isTextContent)
+        .map(content => typeof content === 'string' ? content : content.text)
+        .join('\n');
+    }
+    // Handle single complex content
+    if (this.isTextContent(message.content)) {
+      return typeof message.content === 'string' ? message.content : message.content.text;
+    }
+    return '';
+  }
+
+  async parse(text: string, callbacks?: RunnableConfig['callbacks']): Promise<string[]> {
     const startKeyIndex = text.indexOf(`<${this.key}>`);
     const endKeyIndex = text.indexOf(`</${this.key}>`);
 

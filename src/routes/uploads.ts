@@ -1,6 +1,6 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger';
-import multer from 'multer';
+import multer, { Multer } from 'multer';
 import path from 'path';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -11,6 +11,8 @@ import { DocxLoader } from '@langchain/community/document_loaders/fs/docx';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { Document } from 'langchain/document';
 import { v4 as uuidv4 } from 'uuid';
+import { ParamsDictionary } from 'express-serve-static-core';
+import { ParsedQs } from 'qs';
 
 const router = express.Router();
 
@@ -35,6 +37,16 @@ interface UploadRequestBody {
   embedding_model: string;
 }
 
+type RequestWithFiles = Request<
+  ParamsDictionary,
+  any,
+  UploadRequestBody,
+  ParsedQs,
+  Record<string, any>
+> & {
+  files: MulterFile[];
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = path.join(__dirname, '../../uploads');
@@ -52,18 +64,19 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-const processUpload = async (req: Request, res: Response) => {
+const handleUpload = async (
+  req: RequestWithFiles,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const body = req.body as UploadRequestBody;
-    const files = req.files as MulterFile[];
-
-    if (!files || !Array.isArray(files)) {
+    if (!req.files || !Array.isArray(req.files)) {
       throw new Error('No files uploaded');
     }
 
     const embeddingClient = await getEmbeddingModel(
-      body.embedding_model_provider,
-      body.embedding_model,
+      req.body.embedding_model_provider,
+      req.body.embedding_model,
     );
 
     if (!embeddingClient) {
@@ -71,7 +84,7 @@ const processUpload = async (req: Request, res: Response) => {
     }
 
     const processedFiles: ProcessedFile[] = await Promise.all(
-      files.map(async (file: MulterFile) => {
+      req.files.map(async (file: MulterFile) => {
         try {
           const fileContent = fs.readFileSync(file.path, 'utf-8');
           const embedding = await embeddingClient.embedQuery(fileContent);
@@ -91,11 +104,21 @@ const processUpload = async (req: Request, res: Response) => {
 
     res.json({ files: processedFiles });
   } catch (err) {
-    logger.error(`Error processing files: ${err instanceof Error ? err.message : String(err)}`);
-    res.status(500).json({ error: 'Failed to process files' });
+    next(err);
   }
 };
 
-router.post('/', upload.array('files'), processUpload);
+router.post('/', [
+  upload.array('files'),
+  (err: Error, req: Request, res: Response, next: NextFunction) => {
+    if (err) {
+      logger.error(`Error processing files: ${err instanceof Error ? err.message : String(err)}`);
+      res.status(500).json({ error: 'Failed to process files' });
+    } else {
+      next();
+    }
+  },
+  handleUpload as express.RequestHandler
+]);
 
 export default router;
