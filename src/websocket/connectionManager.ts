@@ -9,50 +9,31 @@ import type { Embeddings } from '@langchain/core/embeddings';
 import type { IncomingMessage } from 'http';
 import logger from '../utils/logger';
 import { ChatOpenAI } from '@langchain/openai';
-import { BaseMessageChunk } from '@langchain/core/messages';
-
-interface ChatModelProviders {
-  [key: string]: {
-    [key: string]: {
-      model: BaseChatModel;
-      [key: string]: any;
-    };
-  };
-}
-
-interface EmbeddingModelProviders {
-  [key: string]: {
-    [key: string]: {
-      model: Embeddings;
-      [key: string]: any;
-    };
-  };
-}
 
 export const handleConnection = async (
   ws: WebSocket,
   request: IncomingMessage,
-): Promise<void> => {
+) => {
   try {
-    const searchParams = new URL(request.url || '', `http://${request.headers.host}`)
+    const searchParams = new URL(request.url, `http://${request.headers.host}`)
       .searchParams;
 
-    const [chatModelProviders, embeddingModelProviders]: [ChatModelProviders, EmbeddingModelProviders] = await Promise.all([
+    const [chatModelProviders, embeddingModelProviders] = await Promise.all([
       getAvailableChatModelProviders(),
       getAvailableEmbeddingModelProviders(),
     ]);
 
-    const chatModelProvider: string =
+    const chatModelProvider =
       searchParams.get('chatModelProvider') ||
       Object.keys(chatModelProviders)[0];
-    const chatModel: string =
+    const chatModel =
       searchParams.get('chatModel') ||
       Object.keys(chatModelProviders[chatModelProvider])[0];
 
-    const embeddingModelProvider: string =
+    const embeddingModelProvider =
       searchParams.get('embeddingModelProvider') ||
       Object.keys(embeddingModelProviders)[0];
-    const embeddingModel: string =
+    const embeddingModel =
       searchParams.get('embeddingModel') ||
       Object.keys(embeddingModelProviders[embeddingModelProvider])[0];
 
@@ -62,23 +43,17 @@ export const handleConnection = async (
     if (
       chatModelProviders[chatModelProvider] &&
       chatModelProviders[chatModelProvider][chatModel] &&
-      chatModelProvider !== 'custom_openai'
+      chatModelProvider != 'custom_openai'
     ) {
-      llm = chatModelProviders[chatModelProvider][chatModel].model;
-    } else if (chatModelProvider === 'custom_openai') {
-      const openAIApiKey = searchParams.get('openAIApiKey');
-      const openAIBaseURL = searchParams.get('openAIBaseURL');
-      
-      if (!openAIApiKey || !openAIBaseURL) {
-        throw new Error('Missing OpenAI API key or base URL');
-      }
-
+      llm = chatModelProviders[chatModelProvider][chatModel]
+        .model as unknown as BaseChatModel | undefined;
+    } else if (chatModelProvider == 'custom_openai') {
       llm = new ChatOpenAI({
         modelName: chatModel,
-        openAIApiKey,
+        openAIApiKey: searchParams.get('openAIApiKey'),
         temperature: 0.7,
         configuration: {
-          baseURL: openAIBaseURL,
+          baseURL: searchParams.get('openAIBaseURL'),
         },
       }) as unknown as BaseChatModel;
     }
@@ -87,7 +62,9 @@ export const handleConnection = async (
       embeddingModelProviders[embeddingModelProvider] &&
       embeddingModelProviders[embeddingModelProvider][embeddingModel]
     ) {
-      embeddings = embeddingModelProviders[embeddingModelProvider][embeddingModel].model;
+      embeddings = embeddingModelProviders[embeddingModelProvider][
+        embeddingModel
+      ].model as Embeddings | undefined;
     }
 
     if (!llm || !embeddings) {
@@ -99,7 +76,6 @@ export const handleConnection = async (
         }),
       );
       ws.close();
-      return;
     }
 
     const interval = setInterval(() => {
@@ -114,36 +90,22 @@ export const handleConnection = async (
       }
     }, 5);
 
-    ws.on('message', async (message: Buffer | ArrayBuffer | Buffer[]) => {
-      await handleMessage(message.toString(), ws, llm, embeddings);
-    });
+    ws.on(
+      'message',
+      async (message) =>
+        await handleMessage(message.toString(), ws, llm, embeddings),
+    );
 
     ws.on('close', () => logger.debug('Connection closed'));
-  } catch (error) {
-    logger.error('Error in connection handler:', error);
+  } catch (err) {
+    ws.send(
+      JSON.stringify({
+        type: 'error',
+        data: 'Internal server error.',
+        key: 'INTERNAL_SERVER_ERROR',
+      }),
+    );
     ws.close();
+    logger.error(err);
   }
 };
-
-export class ConnectionManager {
-  private model?: BaseChatModel;
-  private ws: WebSocket;
-
-  constructor(url: string) {
-    this.ws = new WebSocket(url);
-  }
-
-  async setModel(model: BaseChatModel): Promise<void> {
-    this.model = model;
-  }
-
-  async processMessage(message: BaseMessageChunk): Promise<void> {
-    if (!this.model) {
-      throw new Error('Model not set');
-    }
-    if (this.ws.readyState !== this.ws.OPEN) {
-      throw new Error('WebSocket not connected');
-    }
-    // Process message implementation
-  }
-}

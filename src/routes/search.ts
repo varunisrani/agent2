@@ -10,23 +10,17 @@ import {
 import { searchHandlers } from '../websocket/messageHandler';
 import { AIMessage, BaseMessage, HumanMessage } from '@langchain/core/messages';
 import { MetaSearchAgentType } from '../search/metaSearchAgent';
-import { getErrorMessage } from '../utils/errors';
-import { BaseRetriever } from '@langchain/core/retrievers';
 
 const router = express.Router();
 
-interface SearchHandlers {
-  [key: string]: MetaSearchAgentType;
-}
-
-interface ChatModel {
+interface chatModel {
   provider: string;
   model: string;
   customOpenAIBaseURL?: string;
   customOpenAIKey?: string;
 }
 
-interface EmbeddingModel {
+interface embeddingModel {
   provider: string;
   model: string;
 }
@@ -34,28 +28,10 @@ interface EmbeddingModel {
 interface ChatRequestBody {
   optimizationMode: 'speed' | 'balanced';
   focusMode: string;
-  chatModel?: ChatModel;
-  embeddingModel?: EmbeddingModel;
+  chatModel?: chatModel;
+  embeddingModel?: embeddingModel;
   query: string;
   history: Array<[string, string]>;
-}
-
-interface ChatModelProviders {
-  [key: string]: {
-    [key: string]: {
-      model: BaseChatModel;
-      [key: string]: any;
-    };
-  };
-}
-
-interface EmbeddingModelProviders {
-  [key: string]: {
-    [key: string]: {
-      model: Embeddings;
-      [key: string]: any;
-    };
-  };
 }
 
 router.post('/', async (req, res) => {
@@ -69,7 +45,7 @@ router.post('/', async (req, res) => {
     body.history = body.history || [];
     body.optimizationMode = body.optimizationMode || 'balanced';
 
-    const history: BaseMessage[] = body.history.map((msg: [string, string]) => {
+    const history: BaseMessage[] = body.history.map((msg) => {
       if (msg[0] === 'human') {
         return new HumanMessage({
           content: msg[1],
@@ -81,20 +57,20 @@ router.post('/', async (req, res) => {
       }
     });
 
-    const [chatModelProviders, embeddingModelProviders]: [ChatModelProviders, EmbeddingModelProviders] = await Promise.all([
+    const [chatModelProviders, embeddingModelProviders] = await Promise.all([
       getAvailableChatModelProviders(),
       getAvailableEmbeddingModelProviders(),
     ]);
 
-    const chatModelProvider: string =
+    const chatModelProvider =
       body.chatModel?.provider || Object.keys(chatModelProviders)[0];
-    const chatModel: string =
+    const chatModel =
       body.chatModel?.model ||
       Object.keys(chatModelProviders[chatModelProvider])[0];
 
-    const embeddingModelProvider: string =
+    const embeddingModelProvider =
       body.embeddingModel?.provider || Object.keys(embeddingModelProviders)[0];
-    const embeddingModel: string =
+    const embeddingModel =
       body.embeddingModel?.model ||
       Object.keys(embeddingModelProviders[embeddingModelProvider])[0];
 
@@ -140,8 +116,8 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Invalid model selected' });
     }
 
-    const typedSearchHandlers = searchHandlers as SearchHandlers;
-    const searchHandler: MetaSearchAgentType = typedSearchHandlers[body.focusMode];
+    const searchHandler: MetaSearchAgentType = searchHandlers[body.focusMode];
+
     if (!searchHandler) {
       return res.status(400).json({ message: 'Invalid focus mode' });
     }
@@ -155,11 +131,29 @@ router.post('/', async (req, res) => {
       [],
     );
 
-    res.status(200).json({ emitter });
-  } catch (err: unknown) {
-    const errorMessage = getErrorMessage(err);
+    let message = '';
+    let sources = [];
+
+    emitter.on('data', (data) => {
+      const parsedData = JSON.parse(data);
+      if (parsedData.type === 'response') {
+        message += parsedData.data;
+      } else if (parsedData.type === 'sources') {
+        sources = parsedData.data;
+      }
+    });
+
+    emitter.on('end', () => {
+      res.status(200).json({ message, sources });
+    });
+
+    emitter.on('error', (data) => {
+      const parsedData = JSON.parse(data);
+      res.status(500).json({ message: parsedData.data });
+    });
+  } catch (err: any) {
+    logger.error(`Error in getting search results: ${err.message}`);
     res.status(500).json({ message: 'An error has occurred.' });
-    logger.error(`Error in search: ${errorMessage}`);
   }
 });
 

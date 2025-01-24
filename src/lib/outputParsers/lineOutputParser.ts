@@ -1,17 +1,15 @@
-import { BaseOutputParser } from "langchain/schema/output_parser";
+import { BaseOutputParser } from '@langchain/core/output_parsers';
 
 interface LineOutputParserArgs {
   key?: string;
 }
 
-export class LineOutputParser extends BaseOutputParser<string[]> {
+class LineOutputParser extends BaseOutputParser<string> {
   private key = 'questions';
 
   constructor(args?: LineOutputParserArgs) {
     super();
-    if (args?.key !== undefined) {
-      this.key = args.key;
-    }
+    this.key = args.key ?? this.key;
   }
 
   static lc_name() {
@@ -20,29 +18,29 @@ export class LineOutputParser extends BaseOutputParser<string[]> {
 
   lc_namespace = ['langchain', 'output_parsers', 'line_output_parser'];
 
-  async parse(text: string, args?: any): Promise<string[]> {
-    if (!args) {
-      return text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    }
-
+  async parse(text: string): Promise<string> {
+    const regex = /^(\s*(-|\*|\d+\.\s|\d+\)\s|\u2022)\s*)+/;
     const startKeyIndex = text.indexOf(`<${this.key}>`);
     const endKeyIndex = text.indexOf(`</${this.key}>`);
 
     if (startKeyIndex === -1 || endKeyIndex === -1) {
-      // If no tags found, split by newlines
-      return text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+      return '';
     }
 
-    const contentStartIndex = startKeyIndex + `<${this.key}>`.length;
-    const content = text.slice(contentStartIndex, endKeyIndex).trim();
+    const questionsStartIndex =
+      startKeyIndex === -1 ? 0 : startKeyIndex + `<${this.key}>`.length;
+    const questionsEndIndex = endKeyIndex === -1 ? text.length : endKeyIndex;
+    const line = text
+      .slice(questionsStartIndex, questionsEndIndex)
+      .trim()
+      .replace(regex, '');
 
-    return content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    return line;
   }
 
   getFormatInstructions(): string {
-    return `Return your response as a list, with each item on a new line, wrapped in <${this.key}> tags.`;
+    throw new Error('Not implemented.');
   }
 }
 
-// Export the class directly instead of as default
-export { LineOutputParser as default };
+export default LineOutputParser;

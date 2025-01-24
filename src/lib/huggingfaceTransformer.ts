@@ -37,7 +37,6 @@ export class HuggingFaceTransformersEmbeddings
     this.model = this.modelName;
     this.stripNewLines = fields?.stripNewLines ?? this.stripNewLines;
     this.timeout = fields?.timeout;
-    this.pipelinePromise = Promise.resolve(undefined);
   }
 
   async embedDocuments(texts: string[]): Promise<number[][]> {

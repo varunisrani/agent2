@@ -1,70 +1,48 @@
-import { BaseOutputParser } from "@langchain/core/output_parsers";
-import { RunnableConfig } from "@langchain/core/runnables";
-import { BaseMessageChunk, MessageContent, MessageContentText } from "@langchain/core/messages";
+import { BaseOutputParser } from '@langchain/core/output_parsers';
 
-export class ListLineOutputParser extends BaseOutputParser<string[]> {
-  lc_namespace = ["local", "list_line"];
-  private key: string;
+interface LineListOutputParserArgs {
+  key?: string;
+}
 
-  constructor(options?: { key?: string }) {
+class LineListOutputParser extends BaseOutputParser<string[]> {
+  private key = 'questions';
+
+  constructor(args?: LineListOutputParserArgs) {
     super();
-    this.key = options?.key ?? 'suggestions';
+    this.key = args.key ?? this.key;
   }
 
-  static lc_name(): string {
-    return "ListLineOutputParser";
+  static lc_name() {
+    return 'LineListOutputParser';
   }
 
-  async invoke(input: BaseMessageChunk | string, options?: RunnableConfig): Promise<string[]> {
-    const text = typeof input === 'string' ? input : this.extractText(input);
-    return this.parse(text, options?.callbacks);
-  }
+  lc_namespace = ['langchain', 'output_parsers', 'line_list_output_parser'];
 
-  private isTextContent(content: MessageContent): content is string | MessageContentText {
-    return typeof content === 'string' || 
-           (typeof content === 'object' && 'type' in content && content.type === 'text');
-  }
-
-  private extractText(message: BaseMessageChunk): string {
-    if (typeof message.content === 'string') {
-      return message.content;
-    }
-    // Handle complex message content by concatenating all text parts
-    if (Array.isArray(message.content)) {
-      return message.content
-        .filter(this.isTextContent)
-        .map(content => typeof content === 'string' ? content : content.text)
-        .join('\n');
-    }
-    // Handle single complex content
-    if (this.isTextContent(message.content)) {
-      return typeof message.content === 'string' ? message.content : message.content.text;
-    }
-    return '';
-  }
-
-  async parse(text: string, callbacks?: RunnableConfig['callbacks']): Promise<string[]> {
+  async parse(text: string): Promise<string[]> {
+    const regex = /^(\s*(-|\*|\d+\.\s|\d+\)\s|\u2022)\s*)+/;
     const startKeyIndex = text.indexOf(`<${this.key}>`);
     const endKeyIndex = text.indexOf(`</${this.key}>`);
 
-    if (startKeyIndex === -1 || endKeyIndex === -1) {
-      // If no tags found, split by newlines
-      return text
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
+    if (startKeyIndex === -1 && endKeyIndex === -1) {
+      return [];
     }
 
-    const contentStartIndex = startKeyIndex + `<${this.key}>`.length;
-    const content = text.slice(contentStartIndex, endKeyIndex).trim();
-
-    return content
+    const questionsStartIndex =
+      startKeyIndex === -1 ? 0 : startKeyIndex + `<${this.key}>`.length;
+    const questionsEndIndex = endKeyIndex === -1 ? text.length : endKeyIndex;
+    const lines = text
+      .slice(questionsStartIndex, questionsEndIndex)
+      .trim()
       .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0);
+      .filter((line) => line.trim() !== '')
+      .map((line) => line.replace(regex, ''));
+
+    return lines;
   }
 
   getFormatInstructions(): string {
-    return `Return your response as a list, with each item on a new line, wrapped in <${this.key}> tags.`;
+    throw new Error('Not implemented.');
   }
 }
+
+export default LineListOutputParser;

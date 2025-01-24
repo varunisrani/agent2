@@ -9,11 +9,13 @@ const router = express.Router();
 router.get('/', async (_, res) => {
   try {
     let chats = await db.query.chats.findMany();
+
     chats = chats.reverse();
+
     return res.status(200).json({ chats: chats });
   } catch (err) {
-    logger.error(`Error in getting chats: ${err instanceof Error ? err.message : String(err)}`);
-    res.status(500).json({ error: 'Failed to get chats' });
+    res.status(500).json({ message: 'An error has occurred.' });
+    logger.error(`Error in getting chats: ${err.message}`);
   }
 });
 
@@ -24,7 +26,7 @@ router.get('/:id', async (req, res) => {
     });
 
     if (!chatExists) {
-      return res.status(404).json({ error: 'Chat not found' });
+      return res.status(404).json({ message: 'Chat not found' });
     }
 
     const chatMessages = await db.query.messages.findMany({
@@ -33,8 +35,8 @@ router.get('/:id', async (req, res) => {
 
     return res.status(200).json({ chat: chatExists, messages: chatMessages });
   } catch (err) {
-    logger.error(`Error in getting chat: ${err instanceof Error ? err.message : String(err)}`);
-    res.status(500).json({ error: 'Failed to get chat' });
+    res.status(500).json({ message: 'An error has occurred.' });
+    logger.error(`Error in getting chat: ${err.message}`);
   }
 });
 
@@ -45,7 +47,7 @@ router.delete(`/:id`, async (req, res) => {
     });
 
     if (!chatExists) {
-      return res.status(404).json({ error: 'Chat not found' });
+      return res.status(404).json({ message: 'Chat not found' });
     }
 
     await db.delete(chats).where(eq(chats.id, req.params.id)).execute();
@@ -56,28 +58,8 @@ router.delete(`/:id`, async (req, res) => {
 
     return res.status(200).json({ message: 'Chat deleted successfully' });
   } catch (err) {
-    logger.error(`Error in deleting chat: ${err instanceof Error ? err.message : String(err)}`);
-    res.status(500).json({ error: 'Failed to delete chat' });
-  }
-});
-
-router.post('/', async (req, res) => {
-  try {
-    const chatId = await db
-      .insert(chats)
-      .values({
-        id: req.body.chatId,
-        title: req.body.title,
-        createdAt: new Date().toISOString(),
-        focusMode: req.body.focusMode ?? 'default',
-        files: req.body.files ?? [],
-      })
-      .execute();
-
-    return res.status(201).json({ chatId });
-  } catch (err) {
-    logger.error(`Error in creating chat: ${err instanceof Error ? err.message : String(err)}`);
-    res.status(500).json({ error: 'Failed to create chat' });
+    res.status(500).json({ message: 'An error has occurred.' });
+    logger.error(`Error in deleting chat: ${err.message}`);
   }
 });
 

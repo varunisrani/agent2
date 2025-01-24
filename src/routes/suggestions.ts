@@ -2,10 +2,9 @@ import express from 'express';
 import generateSuggestions from '../chains/suggestionGeneratorAgent';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { getAvailableChatModelProviders } from '../lib/providers';
-import { HumanMessage, AIMessage, BaseMessage } from '@langchain/core/messages';
+import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import logger from '../utils/logger';
 import { ChatOpenAI } from '@langchain/openai';
-import { getErrorMessage } from '../utils/errors';
 
 const router = express.Router();
 
@@ -21,15 +20,6 @@ interface SuggestionsBody {
   chatModel?: ChatModel;
 }
 
-interface ChatModelProviders {
-  [key: string]: {
-    [key: string]: {
-      model: BaseChatModel;
-      [key: string]: any;
-    };
-  };
-}
-
 router.post('/', async (req, res) => {
   try {
     let body: SuggestionsBody = req.body;
@@ -40,10 +30,9 @@ router.post('/', async (req, res) => {
       } else if (msg.role === 'assistant') {
         return new AIMessage(msg.content);
       }
-      return undefined;
     });
 
-    const chatModelProviders: ChatModelProviders = await getAvailableChatModelProviders();
+    const chatModelProviders = await getAvailableChatModelProviders();
 
     const chatModelProvider =
       body.chatModel?.provider || Object.keys(chatModelProviders)[0];
@@ -83,18 +72,15 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Invalid model selected' });
     }
 
-    const messages = chatHistory.filter((msg): msg is BaseMessage => msg !== undefined);
-
     const suggestions = await generateSuggestions(
-      { chat_history: messages },
+      { chat_history: chatHistory },
       llm,
     );
 
     res.status(200).json({ suggestions: suggestions });
-  } catch (err: unknown) {
-    const errorMessage = getErrorMessage(err);
+  } catch (err) {
     res.status(500).json({ message: 'An error has occurred.' });
-    logger.error(`Error in generating suggestions: ${errorMessage}`);
+    logger.error(`Error in generating suggestions: ${err.message}`);
   }
 });
 

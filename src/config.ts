@@ -5,32 +5,28 @@ import toml from '@iarna/toml';
 const configFileName = 'config.toml';
 
 interface Config {
-  [key: string]: any;
   GENERAL: {
-    [key: string]: any;
     PORT: number;
     SIMILARITY_MEASURE: string;
     KEEP_ALIVE: string;
   };
   API_KEYS: {
-    [key: string]: any;
     OPENAI: string;
     GROQ: string;
     ANTHROPIC: string;
     GEMINI: string;
   };
   API_ENDPOINTS: {
-    [key: string]: any;
     SEARXNG: string;
     OLLAMA: string;
   };
 }
 
 type RecursivePartial<T> = {
-  [P in keyof T]?: T[P] extends object ? RecursivePartial<T[P]> : T[P];
+  [P in keyof T]?: RecursivePartial<T[P]>;
 };
 
-const loadConfig = (): Config =>
+const loadConfig = () =>
   toml.parse(
     fs.readFileSync(path.join(__dirname, `../${configFileName}`), 'utf-8'),
   ) as any as Config;

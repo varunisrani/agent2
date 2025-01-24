@@ -12,29 +12,23 @@ import MetaSearchAgent, {
   MetaSearchAgentType,
 } from '../search/metaSearchAgent';
 import prompts from '../prompts';
-import { SearchAgents } from '../types/config';
 
-interface Source {
-  title: string;
-  url: string;
-}
-
-interface Message {
+type Message = {
   messageId: string;
   chatId: string;
   content: string;
-}
+};
 
-interface WSMessage {
+type WSMessage = {
   message: Message;
   optimizationMode: 'speed' | 'balanced' | 'quality';
   type: string;
   focusMode: string;
   history: Array<[string, string]>;
   files: Array<string>;
-}
+};
 
-export const searchHandlers: Record<string, MetaSearchAgent> = {
+export const searchHandlers = {
   webSearch: new MetaSearchAgent({
     activeEngines: [],
     queryGeneratorPrompt: prompts.webSearchRetrieverPrompt,
@@ -98,7 +92,7 @@ const handleEmitterEvents = (
   chatId: string,
 ) => {
   let recievedMessage = '';
-  let sources: Source[] = [];
+  let sources = [];
 
   emitter.on('data', (data) => {
     const parsedData = JSON.parse(data);
@@ -115,11 +109,11 @@ const handleEmitterEvents = (
       ws.send(
         JSON.stringify({
           type: 'sources',
-          data: parsedData.data as Source[],
+          data: parsedData.data,
           messageId: messageId,
         }),
       );
-      sources = parsedData.data as Source[];
+      sources = parsedData.data;
     }
   });
   emitter.on('end', () => {
@@ -150,44 +144,15 @@ const handleEmitterEvents = (
   });
 };
 
-export class MessageHandler {
-  private readonly agents: SearchAgents;
-  private readonly sources: Source[] = [];
-
-  constructor(agents: SearchAgents) {
-    this.agents = agents;
-  }
-
-  getSources(): Source[] {
-    return this.sources;
-  }
-
-  clearSources(): void {
-    this.sources.length = 0;
-  }
-
-  addSource(source: Source): void {
-    this.sources.push(source);
-  }
-
-  async handleSearch(type: string): Promise<void> {
-    const agent = this.agents[type];
-    if (!agent) {
-      throw new Error(`Unknown search type: ${type}`);
-    }
-    // Implementation using this.addSource() to manage sources
-  }
-}
-
 export const handleMessage = async (
   message: string,
   ws: WebSocket,
   llm: BaseChatModel,
   embeddings: Embeddings,
-): Promise<void> => {
+) => {
   try {
-    const parsedWSMessage: WSMessage = JSON.parse(message);
-    const { message: parsedMessage, optimizationMode, focusMode, history, files } = parsedWSMessage;
+    const parsedWSMessage = JSON.parse(message) as WSMessage;
+    const parsedMessage = parsedWSMessage.message;
 
     if (parsedWSMessage.files.length > 0) {
       /* TODO: Implement uploads in other classes/single meta class system*/
@@ -207,84 +172,101 @@ export const handleMessage = async (
         }),
       );
 
-    const searchHandler = searchHandlers[focusMode];
-    if (!searchHandler) {
-      ws.send(JSON.stringify({
-        type: 'error',
-        data: 'Invalid focus mode',
-        key: 'INVALID_FOCUS_MODE'
-      }));
-      return;
-    }
-
-    const messageHistory: BaseMessage[] = history.map(([role, content]) => {
-      return role === 'human' 
-        ? new HumanMessage({ content }) 
-        : new AIMessage({ content });
+    const history: BaseMessage[] = parsedWSMessage.history.map((msg) => {
+      if (msg[0] === 'human') {
+        return new HumanMessage({
+          content: msg[1],
+        });
+      } else {
+        return new AIMessage({
+          content: msg[1],
+        });
+      }
     });
 
-    const emitter = await searchHandler.searchAndAnswer(
-      parsedMessage.content,
-      messageHistory,
-      llm,
-      embeddings,
-      optimizationMode,
-      files
-    );
+    if (parsedWSMessage.type === 'message') {
+      const handler: MetaSearchAgentType =
+        searchHandlers[parsedWSMessage.focusMode];
 
-    handleEmitterEvents(emitter, ws, aiMessageId, parsedMessage.chatId);
+      if (handler) {
+        try {
+          const emitter = await handler.searchAndAnswer(
+            parsedMessage.content,
+            history,
+            llm,
+            embeddings,
+            parsedWSMessage.optimizationMode,
+            parsedWSMessage.files,
+          );
 
-    const chat = await db.query.chats.findFirst({
-      where: eq(chats.id, parsedMessage.chatId),
-    });
+          handleEmitterEvents(emitter, ws, aiMessageId, parsedMessage.chatId);
 
-    if (!chat) {
-      await db
-        .insert(chats)
-        .values({
-          id: parsedMessage.chatId,
-          title: parsedMessage.content,
-          createdAt: new Date().toString(),
-          focusMode: focusMode,
-          files: parsedWSMessage.files.map(getFileDetails),
-        })
-        .execute();
-    }
+          const chat = await db.query.chats.findFirst({
+            where: eq(chats.id, parsedMessage.chatId),
+          });
 
-    const messageExists = await db.query.messages.findFirst({
-      where: eq(messagesSchema.messageId, humanMessageId),
-    });
+          if (!chat) {
+            await db
+              .insert(chats)
+              .values({
+                id: parsedMessage.chatId,
+                title: parsedMessage.content,
+                createdAt: new Date().toString(),
+                focusMode: parsedWSMessage.focusMode,
+                files: parsedWSMessage.files.map(getFileDetails),
+              })
+              .execute();
+          }
 
-    if (!messageExists) {
-      await db
-        .insert(messagesSchema)
-        .values({
-          content: parsedMessage.content,
-          chatId: parsedMessage.chatId,
-          messageId: humanMessageId,
-          role: 'user',
-          metadata: JSON.stringify({
-            createdAt: new Date(),
+          const messageExists = await db.query.messages.findFirst({
+            where: eq(messagesSchema.messageId, humanMessageId),
+          });
+
+          if (!messageExists) {
+            await db
+              .insert(messagesSchema)
+              .values({
+                content: parsedMessage.content,
+                chatId: parsedMessage.chatId,
+                messageId: humanMessageId,
+                role: 'user',
+                metadata: JSON.stringify({
+                  createdAt: new Date(),
+                }),
+              })
+              .execute();
+          } else {
+            await db
+              .delete(messagesSchema)
+              .where(
+                and(
+                  gt(messagesSchema.id, messageExists.id),
+                  eq(messagesSchema.chatId, parsedMessage.chatId),
+                ),
+              )
+              .execute();
+          }
+        } catch (err) {
+          console.log(err);
+        }
+      } else {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            data: 'Invalid focus mode',
+            key: 'INVALID_FOCUS_MODE',
           }),
-        })
-        .execute();
-    } else {
-      await db
-        .delete(messagesSchema)
-        .where(
-          and(
-            gt(messagesSchema.id, messageExists.id),
-            eq(messagesSchema.chatId, parsedMessage.chatId),
-          ),
-        )
-        .execute();
+        );
+      }
     }
-  } catch (error) {
-    logger.error('Error handling message:', error);
-    ws.send(JSON.stringify({
-      type: 'error',
-      data: 'Failed to process message',
-      key: 'MESSAGE_PROCESSING_ERROR'
-    }));
+  } catch (err) {
+    ws.send(
+      JSON.stringify({
+        type: 'error',
+        data: 'Invalid message format',
+        key: 'INVALID_FORMAT',
+      }),
+    );
+    logger.error(`Failed to handle message: ${err}`);
   }
 };

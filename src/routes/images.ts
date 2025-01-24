@@ -2,7 +2,7 @@ import express from 'express';
 import handleImageSearch from '../chains/imageSearchAgent';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { getAvailableChatModelProviders } from '../lib/providers';
-import { HumanMessage, AIMessage, BaseMessage } from '@langchain/core/messages';
+import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import logger from '../utils/logger';
 import { ChatOpenAI } from '@langchain/openai';
 
@@ -15,14 +15,9 @@ interface ChatModel {
   customOpenAIKey?: string;
 }
 
-interface ChatHistoryMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
 interface ImageSearchBody {
   query: string;
-  chatHistory: ChatHistoryMessage[];
+  chatHistory: any[];
   chatModel?: ChatModel;
 }
 
@@ -30,16 +25,13 @@ router.post('/', async (req, res) => {
   try {
     let body: ImageSearchBody = req.body;
 
-    const chatHistory = body.chatHistory
-      .map((msg: ChatHistoryMessage): BaseMessage | undefined => {
-        if (msg.role === 'user') {
-          return new HumanMessage(msg.content);
-        } else if (msg.role === 'assistant') {
-          return new AIMessage(msg.content);
-        }
-        return undefined;
-      })
-      .filter((msg): msg is BaseMessage => msg !== undefined);
+    const chatHistory = body.chatHistory.map((msg: any) => {
+      if (msg.role === 'user') {
+        return new HumanMessage(msg.content);
+      } else if (msg.role === 'assistant') {
+        return new AIMessage(msg.content);
+      }
+    });
 
     const chatModelProviders = await getAvailableChatModelProviders();
 
@@ -88,8 +80,8 @@ router.post('/', async (req, res) => {
 
     res.status(200).json({ images });
   } catch (err) {
-    logger.error(`Error searching images: ${err instanceof Error ? err.message : String(err)}`);
-    res.status(500).json({ error: 'Failed to search images' });
+    res.status(500).json({ message: 'An error has occurred.' });
+    logger.error(`Error in image search: ${err.message}`);
   }
 });
 

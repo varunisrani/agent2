@@ -2,11 +2,10 @@ import axios from 'axios';
 import { getSearxngApiEndpoint } from '../config';
 
 interface SearxngSearchOptions {
-  [key: string]: any;  // Add index signature
+  categories?: string[];
   engines?: string[];
   language?: string;
-  time_range?: string;
-  safesearch?: number;
+  pageno?: number;
 }
 
 interface SearxngSearchResult {
@@ -46,21 +45,3 @@ export const searchSearxng = async (
 
   return { results, suggestions };
 };
-
-export class SearxngSearch {
-  private options: SearxngSearchOptions;
-  
-  constructor(options: SearxngSearchOptions = {}) {
-    this.options = options;
-  }
-
-  // ... rest of the code with type-safe access
-  async search(query: string, options: Partial<SearxngSearchOptions> = {}): Promise<{ results: SearxngSearchResult[], suggestions: string[] }> {
-    const searchOptions: SearxngSearchOptions = {
-      ...this.options,
-      ...options
-    };
-    
-    return searchSearxng(query, searchOptions);
-  }
-}
