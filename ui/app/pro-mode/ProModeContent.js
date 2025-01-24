@@ -3,9 +3,37 @@
 import { useState, useCallback, memo, useRef, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
 import { Settings, Globe, ChartBar, Target, Loader2, ArrowLeft, BarChart3, Search } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { cn } from '@/lib/utils';
 
 const SCRAPE_API_BASE_URL = 'https://varun324242-sjuu.hf.space';
 const PERPLEXITY_API_BASE_URL = 'https://varun324242-sjuuper.hf.space';
+
+// Update color theme constants
+const THEME = {
+    light: {
+        bg: 'bg-white',
+        text: 'text-gray-900',
+        border: 'border-gray-200',
+        card: 'bg-gray-50/30',
+        cardBorder: 'border-gray-200/50',
+        accent: 'text-purple-600',
+        accentHover: 'hover:text-purple-500',
+        buttonPrimary: 'bg-purple-600 hover:bg-purple-500',
+        buttonSecondary: 'bg-gray-100 hover:bg-gray-200',
+    },
+    dark: {
+        bg: 'bg-[#121212]',
+        text: 'text-gray-100',
+        border: 'border-gray-800',
+        card: 'bg-gray-800/30',
+        cardBorder: 'border-gray-700/50',
+        accent: 'text-purple-400',
+        accentHover: 'hover:text-purple-300',
+        buttonPrimary: 'bg-purple-500 hover:bg-purple-400',
+        buttonSecondary: 'bg-gray-800 hover:bg-gray-700',
+    }
+};
 
 // Add large title text at the top
 const PageTitle = () => (
@@ -38,7 +66,13 @@ const InputField = memo(({ label, name, value, onChange, type = "text", placehol
                 name={name}
                 value={value}
                 onChange={handleChange}
-                className="w-full p-2.5 bg-[#2D2D2F]/50 text-white rounded-lg border border-gray-700/50 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/10"
+                className={cn(
+                    "w-full p-2.5 bg-[#2D2D2F]/50 text-white rounded-lg border border-gray-700/50 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/10",
+                    "bg-white dark:bg-gray-900",
+                    "border border-gray-200 dark:border-gray-700",
+                    "focus:border-purple-500 dark:focus:border-purple-400",
+                    "focus:ring-2 focus:ring-purple-500/10 dark:focus:ring-purple-400/10"
+                )}
                 placeholder={placeholder}
                 required={required}
             />
@@ -57,17 +91,17 @@ const logAnalysisStep = (step, data) => {
 
 // Add API configuration
 const API_CONFIG = {
-    baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5001',
+    baseUrl: 'https://varun324242-sjuu.hf.space',
     timeout: 30000,
     retries: 3
 };
 
 // Add retry utility
-const fetchWithRetry = async (url, options, retries = API_CONFIG.retries) => {
+const fetchWithRetry = async (url, options, retries = 3) => {
     try {
         const response = await fetch(url, {
             ...options,
-            signal: AbortSignal.timeout(API_CONFIG.timeout)
+            signal: AbortSignal.timeout(30000)
         });
         return response;
     } catch (err) {
@@ -107,6 +141,7 @@ const ErrorDisplay = ({ error }) => {
 };
 
 export default function ProModeContent() {
+    const { theme } = useTheme();
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -131,54 +166,128 @@ export default function ProModeContent() {
     // Fetch company data from Supabase
     const fetchCompanyData = async () => {
         try {
+            console.group('📊 Fetching Company Data');
+            
             const { data, error } = await supabase
                 .from('sss')
                 .select('*')
-                .single();  // Assuming we're getting the most recent entry
+                .order('created_at', { ascending: false })
+                .limit(1);
 
             if (error) throw error;
 
-            if (data) {
-                setCompanyData({
-                    company_name: data.name,
-                    industry: data.industrie,
-                    website_url: data.website,
-                    scraped_data: JSON.parse(data.data)
-                });
-                console.log('Fetched company data from Supabase:', data);
+            if (data && data.length > 0) {
+                const mostRecent = data[0];
+                let parsedData;
+                try {
+                    parsedData = JSON.parse(mostRecent.data);
+                } catch (e) {
+                    console.warn('Failed to parse company data:', e);
+                    parsedData = {};
+                }
+
+                // Structure the company data properly
+                const companyInfo = {
+                    company_name: mostRecent.name || '',
+                    industry: mostRecent.industrie || '',
+                    website_url: mostRecent.website || '',
+                    scraped_data: parsedData,
+                    analysis: parsedData?.metadata?.analysis || {},
+                    created_at: mostRecent.created_at
+                };
+
+                console.log('Fetched company data:', companyInfo);
+                setCompanyData(companyInfo);
+                
+                // Also update the form data
+                setFormData(prev => ({
+                    ...prev,
+                    company_name: companyInfo.company_name,
+                    industry: companyInfo.industry,
+                    website_url: companyInfo.website_url
+                }));
+
+                // Set website analysis if available
+                if (parsedData?.content) {
+                    try {
+                        const websiteContent = JSON.parse(parsedData.content);
+                        setWebsiteAnalysis({
+                            website_data: websiteContent,
+                            analysis: websiteContent?.analysis || {}
+                        });
+                    } catch (e) {
+                        console.warn('Failed to parse website content:', e);
+                    }
+                }
+
             } else {
-                setError('Please set up company information first');
+                throw new Error('No company data found');
             }
+
+            console.groupEnd();
         } catch (err) {
             console.error('Error fetching company data:', err);
-            setError('Error loading company data');
+            setError('Error loading company data: ' + err.message);
         }
     };
 
-    // Update fetchCompetitorData to use Supabase
+    // Update fetchCompetitorData to use s1 table
     const fetchCompetitorData = async () => {
         try {
             console.group('📊 Fetching Competitor Data');
             console.time('Fetch Duration');
 
             const { data: competitors, error } = await supabase
-                .from('competitors')  // Assuming you have a competitors table
-                .select('*');
+                .from('s1')
+                .select('id, company_name, company_website, company_data, created_at')
+                .order('created_at', { ascending: false });
 
             if (error) throw error;
 
             console.log('Found Competitors:', competitors?.length);
-            competitors?.forEach((comp, index) => {
+            
+            const processedCompetitors = competitors?.map(comp => {
+                try {
+                    const parsedData = JSON.parse(comp.company_data);
+                    return {
+                        id: comp.id,
+                        name: comp.company_name,
+                        website: comp.company_website,
+                        data: parsedData,
+                        created_at: comp.created_at,
+                        // Extract useful information from parsed data
+                        analysis: parsedData.metadata ? {
+                            industry: parsedData.metadata.industry,
+                            scrapeDate: parsedData.metadata.scrapeDate
+                        } : null,
+                        websiteData: parsedData.content ? JSON.parse(parsedData.content) : null
+                    };
+                } catch (parseError) {
+                    console.error(`Error parsing data for competitor ${comp.company_name}:`, parseError);
+                    return {
+                        id: comp.id,
+                        name: comp.company_name,
+                        website: comp.company_website,
+                        created_at: comp.created_at,
+                        error: 'Data parsing error'
+                    };
+                }
+            });
+
+            // Log processed competitors
+            processedCompetitors?.forEach((comp, index) => {
                 console.group(`Competitor ${index + 1}: ${comp.name}`);
                 console.log('Website:', comp.website);
-                console.log('Data Available:', !!comp.data);
+                console.log('Industry:', comp.analysis?.industry);
+                console.log('Scraped Date:', comp.analysis?.scrapeDate);
+                console.log('Data Available:', !!comp.websiteData);
                 console.groupEnd();
             });
 
-            setCompetitorData(competitors || []);
+            setCompetitorData(processedCompetitors || []);
             console.timeEnd('Fetch Duration');
             console.groupEnd();
-            return competitors || [];
+            return processedCompetitors || [];
         } catch (err) {
             console.error('❌ Error fetching competitor data:', err);
             setError('Failed to fetch competitor data: ' + err.message);
@@ -204,14 +313,25 @@ export default function ProModeContent() {
             const apiBaseUrl = method === 'scrape' ? SCRAPE_API_BASE_URL : PERPLEXITY_API_BASE_URL;
             const endpoint = method === 'scrape' ? '/api/analyze-website' : '/api/analyze';
             
-            // Log the request details
-            console.log('Making request to:', `${apiBaseUrl}${endpoint}`);
-            console.log('Request payload:', {
+            // Create a properly structured payload
+            const payload = {
                 detail_level: detailLevel,
                 company_name: companyData.company_name,
                 website_url: companyData.website_url,
-                industry: companyData.industry
-            });
+                industry: companyData.industry,
+                metadata: {
+                    analysis_type: method,
+                    company_info: {
+                        name: companyData.company_name,
+                        industry: companyData.industry,
+                        website: companyData.website_url
+                    }
+                }
+            };
+
+            // Log the request details
+            console.log('Making request to:', `${apiBaseUrl}${endpoint}`);
+            console.log('Request payload:', JSON.stringify(payload, null, 2));
 
             const response = await fetch(`${apiBaseUrl}${endpoint}`, {
                 method: 'POST',
@@ -219,33 +339,24 @@ export default function ProModeContent() {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 },
-                body: JSON.stringify({
-                    detail_level: detailLevel,
-                    company_name: companyData.company_name,
-                    website_url: companyData.website_url,
-                    industry: companyData.industry
-                })
+                body: JSON.stringify(payload)
             });
 
-            // Check if response is ok before trying to parse JSON
             if (!response.ok) {
+                const errorText = await response.text();
+                console.error('API Error Response:', errorText);
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            // Log the raw response
-            const responseText = await response.text();
-            console.log('Raw response:', responseText);
+            const data = await response.json();
+            console.log('API Response:', data);
 
-            // Try to parse the response as JSON
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (parseError) {
-                console.error('Failed to parse response as JSON:', parseError);
-                throw new Error('Invalid response from server');
+            if (data.status === 'error') {
+                throw new Error(data.message || 'Analysis failed');
             }
 
             setAnalysisMethod(method);
+            setWebsiteAnalysis(data);
             
             // Move to next step
             setStep(prevStep => prevStep + 1);
@@ -268,11 +379,22 @@ export default function ProModeContent() {
 
     // Handle text area changes - only updates state when user finishes typing
     const handleAnswerChange = (questionId, value) => {
-        console.log(`Updating answer for question ${questionId}:`, value);
+        if (!value.trim()) return; // Don't save empty answers
+        
         setAnswers(prev => ({
             ...prev,
-            [questionId]: value.trim() // Trim whitespace from answer
+            [questionId]: value.trim()
         }));
+        console.log(`Updated answer for question ${questionId}:`, value.trim());
+    };
+
+    // Add validation before allowing report generation
+    const canGenerateReport = () => {
+        return questions.length > 0 && 
+               questions.every(q => answers[q.id]?.trim()) &&
+               companyData &&
+               reportType &&
+               detailLevel;
     };
 
     // Handle form submission
@@ -334,7 +456,12 @@ export default function ProModeContent() {
                         }
                         handleAnalysisClick('scrape');
                     }}
-                    className="w-full px-4 py-2 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 transition-all"
+                    className={cn(
+                        "w-full px-4 py-2 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 transition-all",
+                        "bg-purple-600 dark:bg-purple-500",
+                        "hover:bg-purple-500 dark:hover:bg-purple-400",
+                        "text-white"
+                    )}
                 >
                     <div className="flex items-center justify-center gap-2">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -353,7 +480,12 @@ export default function ProModeContent() {
                         }
                         handleAnalysisClick('perplexity');
                     }}
-                    className="w-full px-4 py-2 rounded-lg bg-pink-600/20 hover:bg-pink-600/30 border border-pink-500/30 text-pink-300 transition-all"
+                    className={cn(
+                        "w-full px-4 py-2 rounded-lg bg-pink-600/20 hover:bg-pink-600/30 border border-pink-500/30 text-pink-300 transition-all",
+                        "bg-pink-600 dark:bg-pink-500",
+                        "hover:bg-pink-500 dark:hover:bg-pink-400",
+                        "text-pink-300"
+                    )}
                 >
                     <div className="flex items-center justify-center gap-2">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -373,7 +505,11 @@ export default function ProModeContent() {
                     </div>
                     <a 
                         href="/company-form" 
-                        className="px-6 py-3 rounded-lg font-medium bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white"
+                        className={cn(
+                            "px-6 py-3 rounded-lg font-medium bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white",
+                            "bg-purple-600 dark:bg-purple-500",
+                            "hover:bg-purple-500 dark:hover:bg-purple-400"
+                        )}
                     >
                         Set Up Company Information
                     </a>
@@ -391,10 +527,12 @@ export default function ProModeContent() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Quick Analysis Card */}
                 <div
-                    className={`p-6 rounded-xl border-2 cursor-pointer transition-all
-                        ${detailLevel === 'quick' 
-                            ? 'border-purple-500 bg-purple-500/10' 
-                            : 'border-gray-700 hover:border-purple-500/50'}`}
+                    className={cn(
+                        "p-6 rounded-xl border-2 cursor-pointer transition-all",
+                        detailLevel === 'quick' 
+                            ? "border-purple-500 bg-purple-500/10" 
+                            : "border-gray-700 hover:border-purple-500/50"
+                    )}
                     onClick={() => {
                         console.log('Detail level selected: quick');
                         setDetailLevel('quick');
@@ -414,10 +552,12 @@ export default function ProModeContent() {
 
                     {/* Detailed Analysis Card */}
                 <div
-                    className={`p-6 rounded-xl border-2 cursor-pointer transition-all
-                        ${detailLevel === 'detailed' 
-                            ? 'border-purple-500 bg-purple-500/10' 
-                            : 'border-gray-700 hover:border-purple-500/50'}`}
+                    className={cn(
+                        "p-6 rounded-xl border-2 cursor-pointer transition-all",
+                        detailLevel === 'detailed' 
+                            ? "border-purple-500 bg-purple-500/10" 
+                            : "border-gray-700 hover:border-purple-500/50"
+                    )}
                     onClick={() => {
                         console.log('Detail level selected: detailed');
                         setDetailLevel('detailed');
@@ -514,16 +654,6 @@ export default function ProModeContent() {
                 console.group('🚀 Generating Report Analysis');
                 console.time('Analysis Duration');
 
-                // Check if API is available
-                try {
-                    const healthCheck = await fetch(`${API_CONFIG.baseUrl}/api/health`);
-                    if (!healthCheck.ok) {
-                        throw new Error('API server is not responding');
-                    }
-                } catch (err) {
-                    throw new Error('Cannot connect to API server. Please ensure the server is running.');
-                }
-
                 const competitors = await fetchCompetitorData();
                 
                 const requestPayload = {
@@ -586,36 +716,67 @@ export default function ProModeContent() {
                 setError(null);
 
                 try {
-                    // Validate required data
+                    // Enhanced validation
                     if (!companyData?.company_name || !companyData?.industry) {
-                        throw new Error('Missing required company information');
+                        console.error('Missing company data:', companyData);
+                        throw new Error('Company name and industry are required. Please ensure company data is loaded.');
                     }
+
+                    // Log the company data being used
+                    console.log('Using company data:', {
+                        name: companyData.company_name,
+                        industry: companyData.industry,
+                        website: companyData.website_url
+                    });
+
+                    // Format competitor data properly
+                    const formattedCompetitors = competitorData.map(comp => ({
+                        company_name: comp.name,
+                        website_url: comp.website,
+                        industry: comp.analysis?.industry || '',
+                        data: comp.websiteData || {},
+                        metadata: {
+                            scrapeDate: comp.analysis?.scrapeDate || new Date().toISOString(),
+                            industry: comp.analysis?.industry || ''
+                        }
+                    }));
 
                     // Create request payload with validated structure
                     const requestPayload = {
+                        company_name: companyData.company_name,
+                        industry: companyData.industry,
+                        website_url: companyData.website_url || '',
                         company_info: {
-                            company_name: companyData.company_name,
-                            industry: companyData.industry,
-                            website_url: companyData.website_url || '',
-                            data: companyData.scraped_data || null
+                            data: companyData.scraped_data || {}
                         },
                         report_type: reportType,
                         detail_level: detailLevel,
-                        answers: answers,
-                        website_data: websiteAnalysis?.website_data || null,
-                        competitor_data: competitorData || [],
-                        focus_areas: ['Market Size', 'Competition', 'Growth Trends'],
-                        market_region: 'Global',
-                        business_model: 'B2B',
-                        target_market: 'Global Enterprise'
+                        answers: Object.keys(answers).map(key => ({
+                            question_id: key,
+                            answer: answers[key]
+                        })),
+                        website_data: websiteAnalysis?.website_data || companyData.scraped_data || {},
+                        competitor_data: formattedCompetitors,
+                        analysis_parameters: {
+                            focus_areas: ['Market Size', 'Competition', 'Growth Trends'],
+                            market_region: 'Global',
+                            business_model: websiteAnalysis?.analysis?.business_model || 'B2B',
+                            target_market: websiteAnalysis?.analysis?.target_market || 'Global Enterprise'
+                        }
                     };
 
-                    logAnalysisStep('Generate Report Request', requestPayload);
+                    // Add validation check before sending
+                    if (!requestPayload.company_name || !requestPayload.industry) {
+                        throw new Error('Company name and industry are required fields');
+                    }
 
-                    const response = await fetchWithRetry(`${API_CONFIG.baseUrl}/api/generate-report`, {
+                    console.log('Sending request payload:', JSON.stringify(requestPayload, null, 2));
+
+                    const response = await fetch(`${SCRAPE_API_BASE_URL}/api/generate-report`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
+                            'Accept': 'application/json'
                         },
                         body: JSON.stringify(requestPayload)
                     });
@@ -627,7 +788,7 @@ export default function ProModeContent() {
                         throw new Error(`Failed to generate report (${response.status}): ${JSON.stringify(data, null, 2)}`);
                     }
 
-                    if (data.status === 'success') {
+                    if (data.status === 'success' && data.data) {
                         setReport(data.data);
                         setStep(4);
                     } else {
@@ -639,6 +800,7 @@ export default function ProModeContent() {
                     setError(err.message);
                 } finally {
                     setLoading(false);
+                    console.groupEnd();
                 }
             };
 
@@ -654,7 +816,7 @@ export default function ProModeContent() {
             }
 
             return (
-                <div className="space-y-6">
+                <div className="space-y-6 bg-[#121212]">
                     <h2 className="text-2xl font-bold text-purple-400">Analysis Questions</h2>
                     
                     {/* Company Info Display */}
@@ -681,9 +843,16 @@ export default function ProModeContent() {
                             <span>Progress</span>
                             <span>{Object.keys(answers).length}/{questions.length} questions answered</span>
                         </div>
-                        <div className="h-2 bg-gray-700 rounded-full">
+                        <div className={cn(
+                            "h-2 rounded-full",
+                            "bg-gray-100 dark:bg-gray-800"
+                        )}>
                             <div 
-                                className="h-full bg-gradient-to-r from-purple-600 to-pink-600 rounded-full transition-all"
+                                className={cn(
+                                    "h-full rounded-full transition-all",
+                                    "bg-gradient-to-r from-purple-600 to-pink-600",
+                                    "dark:from-purple-500 dark:to-pink-500"
+                                )}
                                 style={{ width: `${(Object.keys(answers).length/questions.length) * 100}%` }}
                             />
                         </div>
@@ -697,7 +866,13 @@ export default function ProModeContent() {
                             >
                                 <p className="text-gray-200">{q.question}</p>
                                     <textarea
-                                    className="mt-4 w-full p-3 bg-gray-900/50 rounded-lg border border-gray-700 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-gray-300"
+                                    className={cn(
+                                        "mt-4 w-full p-3 bg-gray-900/50 rounded-lg border border-gray-700 focus:border-purple-500 focus:ring-1 focus:ring-purple-500",
+                                        "bg-gray-900 dark:bg-gray-100",
+                                        "focus:border-purple-500 dark:focus:border-purple-400",
+                                        "focus:ring-2 focus:ring-purple-500/10 dark:focus:ring-purple-400/10",
+                                        "text-gray-300 dark:text-gray-700"
+                                    )}
                                     placeholder="Enter your answer here..."
                                     rows="3"
                                     defaultValue={answers[q.id] || ''}
@@ -710,16 +885,33 @@ export default function ProModeContent() {
                     <div className="flex justify-end gap-4 mt-6">
                         <button
                             onClick={() => setStep(2)}
-                            className="px-6 py-3 rounded-lg font-medium border border-gray-700 hover:border-purple-500/50 text-gray-300"
+                            className={cn(
+                                "px-6 py-3 rounded-lg font-medium border border-gray-700 hover:border-purple-500/50 text-gray-300",
+                                "bg-gray-100 dark:bg-gray-800",
+                                "hover:bg-gray-200 dark:hover:bg-gray-700",
+                                "text-gray-900 dark:text-gray-100"
+                            )}
                         >
                             Back
                         </button>
                         <button
                             onClick={handleGenerateReport}
-                            disabled={!isComplete || loading}
-                            className="px-6 py-3 rounded-lg font-medium bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white transition-all disabled:opacity-50"
+                            disabled={!canGenerateReport() || loading}
+                            className={cn(
+                                "px-6 py-3 rounded-lg font-medium transition-all duration-200",
+                                canGenerateReport() && !loading 
+                                    ? "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white"
+                                    : "bg-gray-600/50 text-gray-400 cursor-not-allowed"
+                            )}
                         >
-                            {loading ? 'Generating Report...' : 'Generate Report'}
+                            {loading ? (
+                                <div className="flex items-center gap-2">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Generating Report...
+                                </div>
+                            ) : (
+                                'Generate Report'
+                            )}
                         </button>
                     </div>
                 </div>
@@ -753,10 +945,12 @@ export default function ProModeContent() {
                     {reportTypes.map((type) => (
                         <div
                             key={type.id}
-                            className={`p-6 rounded-xl border-2 cursor-pointer transition-all
-                                ${reportType === type.id 
-                                    ? 'border-purple-500 bg-purple-500/10' 
-                                    : 'border-gray-700 hover:border-purple-500/50'}`}
+                            className={cn(
+                                "p-6 rounded-xl border-2 cursor-pointer transition-all",
+                                reportType === type.id 
+                                    ? "border-purple-500 bg-purple-500/10" 
+                                    : "border-gray-700 hover:border-purple-500/50"
+                            )}
                             onClick={() => handleReportTypeSelect(type)}
                         >
                             <h3 className="text-xl font-semibold text-purple-300">{type.name}</h3>
@@ -772,7 +966,11 @@ export default function ProModeContent() {
 
                 {/* Error display */}
                 {error && (
-                    <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
+                    <div className={cn(
+                        "mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400",
+                        "bg-red-500/10 dark:bg-red-500/10",
+                        "border-red-200/20 dark:border-red-500/20"
+                    )}>
                         {error}
                 </div>
                 )}
@@ -801,7 +999,13 @@ export default function ProModeContent() {
                         name="company_name"
                         defaultValue={formData.company_name}
                         onBlur={handleInputChange}
-                        className="w-full p-3 bg-gray-800/50 rounded-lg border border-gray-700 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                        className={cn(
+                            "w-full p-3 bg-gray-800/50 rounded-lg border border-gray-700 focus:border-purple-500 focus:ring-1 focus:ring-purple-500",
+                            "bg-gray-800 dark:bg-gray-100",
+                            "focus:border-purple-500 dark:focus:border-purple-400",
+                            "focus:ring-2 focus:ring-purple-500/10 dark:focus:ring-purple-400/10",
+                            "text-gray-300 dark:text-gray-700"
+                        )}
                         placeholder="Enter company name"
                         required
                     />
@@ -816,7 +1020,13 @@ export default function ProModeContent() {
                         name="industry"
                         defaultValue={formData.industry}
                         onBlur={handleInputChange}
-                        className="w-full p-3 bg-gray-800/50 rounded-lg border border-gray-700 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                        className={cn(
+                            "w-full p-3 bg-gray-800/50 rounded-lg border border-gray-700 focus:border-purple-500 focus:ring-1 focus:ring-purple-500",
+                            "bg-gray-800 dark:bg-gray-100",
+                            "focus:border-purple-500 dark:focus:border-purple-400",
+                            "focus:ring-2 focus:ring-purple-500/10 dark:focus:ring-purple-400/10",
+                            "text-gray-300 dark:text-gray-700"
+                        )}
                         placeholder="Enter industry"
                         required
                     />
@@ -831,7 +1041,13 @@ export default function ProModeContent() {
                         name="website_url"
                         defaultValue={formData.website_url}
                         onBlur={handleInputChange}
-                        className="w-full p-3 bg-gray-800/50 rounded-lg border border-gray-700 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                        className={cn(
+                            "w-full p-3 bg-gray-800/50 rounded-lg border border-gray-700 focus:border-purple-500 focus:ring-1 focus:ring-purple-500",
+                            "bg-gray-800 dark:bg-gray-100",
+                            "focus:border-purple-500 dark:focus:border-purple-400",
+                            "focus:ring-2 focus:ring-purple-500/10 dark:focus:ring-purple-400/10",
+                            "text-gray-300 dark:text-gray-700"
+                        )}
                         placeholder="https://example.com"
                     />
                 </div>
@@ -840,13 +1056,22 @@ export default function ProModeContent() {
                     <button
                         type="button"
                         onClick={() => setStep(2)}
-                        className="px-6 py-3 rounded-lg font-medium border border-gray-700 hover:border-purple-500/50 text-gray-300"
+                        className={cn(
+                            "px-6 py-3 rounded-lg font-medium border border-gray-700 hover:border-purple-500/50 text-gray-300",
+                            "bg-gray-100 dark:bg-gray-800",
+                            "hover:bg-gray-200 dark:hover:bg-gray-700",
+                            "text-gray-900 dark:text-gray-100"
+                        )}
                     >
                         Back
                     </button>
                     <button
                         type="submit"
-                        className="flex-1 px-6 py-3 rounded-lg font-medium bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white"
+                        className={cn(
+                            "flex-1 px-6 py-3 rounded-lg font-medium bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white",
+                            "bg-purple-600 dark:bg-purple-500",
+                            "hover:bg-purple-500 dark:hover:bg-purple-400"
+                        )}
                     >
                         Analyze Company
                     </button>
@@ -897,13 +1122,23 @@ export default function ProModeContent() {
                 return;
             }
 
-            console.log('Generating questions with data:', {
+            const payload = {
                 report_type: reportType,
                 detail_level: detailLevel,
-                company_name: formData.company_name,
-                industry: formData.industry,
-                website_data: websiteAnalysis.website_data
-            });
+                company_name: companyData.company_name,
+                industry: companyData.industry,
+                website_data: websiteAnalysis?.website_data || {},
+                metadata: {
+                    analysis_type: analysisMethod,
+                    company_info: {
+                        name: companyData.company_name,
+                        industry: companyData.industry,
+                        website: companyData.website_url
+                    }
+                }
+            };
+            
+            console.log('Generating questions with data:', JSON.stringify(payload, null, 2));
             
             setLoading(true);
             setError(null);
@@ -913,25 +1148,29 @@ export default function ProModeContent() {
             try {
                 const response = await fetch(`${apiBaseUrl}/api/generate-questions`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        report_type: reportType,
-                        detail_level: detailLevel,
-                        company_name: formData.company_name,
-                        industry: formData.industry,
-                        website_data: websiteAnalysis.website_data
-                    })
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
                 });
 
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('API Error Response:', errorText);
+                    throw new Error(`Failed to generate questions (${response.status})`);
+                }
+
                 const data = await response.json();
-                if (data.status === 'success') {
+                if (data.status === 'success' && data.data?.questions) {
                     setQuestions(data.data.questions);
                     setStep(5);
                 } else {
-                    setError(data.message);
+                    throw new Error(data.message || 'Failed to generate questions');
                 }
             } catch (err) {
-                setError('Failed to generate questions. Please try again.');
+                console.error('Failed to generate questions:', err);
+                setError(err.message);
             } finally {
                 setLoading(false);
             }
@@ -1005,14 +1244,23 @@ export default function ProModeContent() {
                             setWebsiteAnalysis(null);
                             setStep(3);
                         }}
-                        className="px-6 py-3 rounded-lg font-medium border border-gray-700 hover:border-purple-500/50 text-gray-300"
+                        className={cn(
+                            "px-6 py-3 rounded-lg font-medium border border-gray-700 hover:border-purple-500/50 text-gray-300",
+                            "bg-gray-100 dark:bg-gray-800",
+                            "hover:bg-gray-200 dark:hover:bg-gray-700",
+                            "text-gray-900 dark:text-gray-100"
+                        )}
                     >
                         Back
                     </button>
                     {analysis && (
                     <button
                         onClick={handleContinue}
-                        className="flex-1 px-6 py-3 rounded-lg font-medium bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white"
+                        className={cn(
+                            "flex-1 px-6 py-3 rounded-lg font-medium bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white",
+                            "bg-purple-600 dark:bg-purple-500",
+                            "hover:bg-purple-500 dark:hover:bg-purple-400"
+                        )}
                     >
                         Continue to Questions
                     </button>
@@ -1029,36 +1277,67 @@ export default function ProModeContent() {
             setError(null);
 
             try {
-                // Validate required data
+                // Enhanced validation
                 if (!companyData?.company_name || !companyData?.industry) {
-                    throw new Error('Missing required company information');
+                    console.error('Missing company data:', companyData);
+                    throw new Error('Company name and industry are required. Please ensure company data is loaded.');
                 }
+
+                // Log the company data being used
+                console.log('Using company data:', {
+                    name: companyData.company_name,
+                    industry: companyData.industry,
+                    website: companyData.website_url
+                });
+
+                // Format competitor data properly
+                const formattedCompetitors = competitorData.map(comp => ({
+                    company_name: comp.name,
+                    website_url: comp.website,
+                    industry: comp.analysis?.industry || '',
+                    data: comp.websiteData || {},
+                    metadata: {
+                        scrapeDate: comp.analysis?.scrapeDate || new Date().toISOString(),
+                        industry: comp.analysis?.industry || ''
+                    }
+                }));
 
                 // Create request payload with validated structure
                 const requestPayload = {
+                    company_name: companyData.company_name,
+                    industry: companyData.industry,
+                    website_url: companyData.website_url || '',
                     company_info: {
-                        company_name: companyData.company_name,
-                        industry: companyData.industry,
-                        website_url: companyData.website_url || '',
-                        data: companyData.scraped_data || null
+                        data: companyData.scraped_data || {}
                     },
                     report_type: reportType,
                     detail_level: detailLevel,
-                    answers: answers,
-                    website_data: websiteAnalysis?.website_data || null,
-                    competitor_data: competitorData || [],
-                    focus_areas: ['Market Size', 'Competition', 'Growth Trends'],
-                    market_region: 'Global',
-                    business_model: 'B2B',
-                    target_market: 'Global Enterprise'
+                    answers: Object.keys(answers).map(key => ({
+                        question_id: key,
+                        answer: answers[key]
+                    })),
+                    website_data: websiteAnalysis?.website_data || companyData.scraped_data || {},
+                    competitor_data: formattedCompetitors,
+                    analysis_parameters: {
+                        focus_areas: ['Market Size', 'Competition', 'Growth Trends'],
+                        market_region: 'Global',
+                        business_model: websiteAnalysis?.analysis?.business_model || 'B2B',
+                        target_market: websiteAnalysis?.analysis?.target_market || 'Global Enterprise'
+                    }
                 };
 
-                logAnalysisStep('Generate Report Request', requestPayload);
+                // Add validation check before sending
+                if (!requestPayload.company_name || !requestPayload.industry) {
+                    throw new Error('Company name and industry are required fields');
+                }
 
-                const response = await fetchWithRetry(`${API_CONFIG.baseUrl}/api/generate-report`, {
+                console.log('Sending request payload:', JSON.stringify(requestPayload, null, 2));
+
+                const response = await fetch(`${SCRAPE_API_BASE_URL}/api/generate-report`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     },
                     body: JSON.stringify(requestPayload)
                 });
@@ -1070,7 +1349,7 @@ export default function ProModeContent() {
                     throw new Error(`Failed to generate report (${response.status}): ${JSON.stringify(data, null, 2)}`);
                 }
 
-                if (data.status === 'success') {
+                if (data.status === 'success' && data.data) {
                     setReport(data.data);
                     setStep(4);
                 } else {
@@ -1082,6 +1361,7 @@ export default function ProModeContent() {
                 setError(err.message);
             } finally {
                 setLoading(false);
+                console.groupEnd();
             }
         };
 
@@ -1124,9 +1404,16 @@ export default function ProModeContent() {
                         <span>Progress</span>
                         <span>{Object.keys(answers).length}/{questions.length} questions answered</span>
                     </div>
-                    <div className="h-2 bg-gray-700 rounded-full">
+                    <div className={cn(
+                        "h-2 rounded-full",
+                        "bg-gray-100 dark:bg-gray-800"
+                    )}>
                         <div 
-                            className="h-full bg-gradient-to-r from-purple-600 to-pink-600 rounded-full transition-all"
+                            className={cn(
+                                "h-full rounded-full transition-all",
+                                "bg-gradient-to-r from-purple-600 to-pink-600",
+                                "dark:from-purple-500 dark:to-pink-500"
+                            )}
                             style={{ width: `${(Object.keys(answers).length/questions.length) * 100}%` }}
                         />
                     </div>
@@ -1140,7 +1427,13 @@ export default function ProModeContent() {
                         >
                             <p className="text-gray-200">{q.question}</p>
                                 <textarea
-                                className="mt-4 w-full p-3 bg-gray-900/50 rounded-lg border border-gray-700 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-gray-300"
+                                className={cn(
+                                    "mt-4 w-full p-3 bg-gray-900/50 rounded-lg border border-gray-700 focus:border-purple-500 focus:ring-1 focus:ring-purple-500",
+                                    "bg-gray-900 dark:bg-gray-100",
+                                    "focus:border-purple-500 dark:focus:border-purple-400",
+                                    "focus:ring-2 focus:ring-purple-500/10 dark:focus:ring-purple-400/10",
+                                    "text-gray-300 dark:text-gray-700"
+                                )}
                                 placeholder="Enter your answer here..."
                                 rows="3"
                                     defaultValue={answers[q.id] || ''}
@@ -1153,16 +1446,33 @@ export default function ProModeContent() {
                 <div className="flex justify-end gap-4 mt-6">
                     <button
                         onClick={() => setStep(2)}
-                        className="px-6 py-3 rounded-lg font-medium border border-gray-700 hover:border-purple-500/50 text-gray-300"
+                        className={cn(
+                            "px-6 py-3 rounded-lg font-medium border border-gray-700 hover:border-purple-500/50 text-gray-300",
+                            "bg-gray-100 dark:bg-gray-800",
+                            "hover:bg-gray-200 dark:hover:bg-gray-700",
+                            "text-gray-900 dark:text-gray-100"
+                        )}
                     >
                         Back
                     </button>
                     <button
                         onClick={handleGenerateReport}
-                        disabled={!isComplete || loading}
-                        className="px-6 py-3 rounded-lg font-medium bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white transition-all disabled:opacity-50"
+                        disabled={!canGenerateReport() || loading}
+                        className={cn(
+                            "px-6 py-3 rounded-lg font-medium transition-all duration-200",
+                            canGenerateReport() && !loading 
+                                ? "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white"
+                                : "bg-gray-600/50 text-gray-400 cursor-not-allowed"
+                        )}
                     >
-                        {loading ? 'Generating Report...' : 'Generate Report'}
+                        {loading ? (
+                            <div className="flex items-center gap-2">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Generating Report...
+                            </div>
+                        ) : (
+                            'Generate Report'
+                        )}
                     </button>
                 </div>
             </div>
@@ -1226,7 +1536,12 @@ export default function ProModeContent() {
                                 console.log('Copying report content to clipboard');
                                 navigator.clipboard.writeText(report?.report_content);
                             }}
-                            className="px-4 py-2 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 text-white flex items-center gap-2"
+                            className={cn(
+                                "px-4 py-2 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 text-white flex items-center gap-2",
+                                "bg-gray-100 dark:bg-gray-800",
+                                "hover:bg-gray-200 dark:hover:bg-gray-700",
+                                "text-gray-900 dark:text-gray-100"
+                            )}
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
@@ -1235,7 +1550,11 @@ export default function ProModeContent() {
                         </button>
                         <button
                             onClick={downloadPDF}
-                            className="px-4 py-2 rounded-lg font-medium bg-purple-600 hover:bg-purple-500 text-white flex items-center gap-2"
+                            className={cn(
+                                "px-4 py-2 rounded-lg font-medium bg-purple-600 hover:bg-purple-500 text-white flex items-center gap-2",
+                                "bg-purple-600 dark:bg-purple-500",
+                                "hover:bg-purple-500 dark:hover:bg-purple-400"
+                            )}
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -1279,7 +1598,12 @@ export default function ProModeContent() {
                 <div className="flex gap-4">
                     <button
                         onClick={() => setStep(5)}
-                        className="px-6 py-3 rounded-lg font-medium border border-gray-700 hover:border-purple-500/50 text-gray-300"
+                        className={cn(
+                            "px-6 py-3 rounded-lg font-medium border border-gray-700 hover:border-purple-500/50 text-gray-300",
+                            "bg-gray-100 dark:bg-gray-800",
+                            "hover:bg-gray-200 dark:hover:bg-gray-700",
+                            "text-gray-900 dark:text-gray-100"
+                        )}
                     >
                         Back
                     </button>
@@ -1300,7 +1624,11 @@ export default function ProModeContent() {
                             setAnswers({});
                             setReport(null);
                         }}
-                        className="flex-1 px-6 py-3 rounded-lg font-medium bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white"
+                        className={cn(
+                            "flex-1 px-6 py-3 rounded-lg font-medium bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white",
+                            "bg-purple-600 dark:bg-purple-500",
+                            "hover:bg-purple-500 dark:hover:bg-purple-400"
+                        )}
                     >
                         Start New Analysis
                     </button>
@@ -1311,68 +1639,57 @@ export default function ProModeContent() {
 
     // Add visual feedback for competitor data in the UI
     const CompetitorStatus = () => (
-        <div className="mb-6 p-4 bg-gray-800/50 rounded-lg">
-            <h3 className="text-lg font-semibold text-purple-400 mb-2">Competitor Data Status</h3>
+        <div className={cn(
+            "space-y-2",
+            "text-gray-700 dark:text-gray-300"
+        )}>
+            <h3 className="text-lg font-semibold text-purple-600 dark:text-purple-400 mb-2">
+                Competitor Data Status
+            </h3>
             <div className="space-y-2">
-                <p className="text-gray-300">
+                <p>
                     {competitorData.length > 0 ? (
                         <>
-                            <span className="text-green-400">✓</span> {competitorData.length} competitors loaded
+                            <span className="text-green-600 dark:text-green-400">✓</span> {competitorData.length} competitors loaded
                         </>
                     ) : (
                         <>
-                            <span className="text-yellow-400">⚠</span> No competitor data available
+                            <span className="text-yellow-600 dark:text-yellow-400">⚠</span> No competitor data available
                         </>
                     )}
                 </p>
                 {competitorData.length > 0 && (
-                    <div className="text-sm text-gray-400">
-                        Companies: {competitorData.map(c => c.name).join(', ')}
+                    <div className="space-y-1 text-sm">
+                        <p className="font-medium">Companies:</p>
+                        <div className="max-h-32 overflow-y-auto">
+                            {competitorData.map((comp, index) => (
+                                <div key={comp.id} className="flex items-center gap-2 py-1">
+                                    <span className="text-xs text-gray-500">
+                                        {index + 1}.
+                                    </span>
+                                    <span className="font-medium">
+                                        {comp.name}
+                                    </span>
+                                    {comp.analysis?.industry && (
+                                        <span className="text-xs text-gray-500">
+                                            ({comp.analysis.industry})
+                                        </span>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>
         </div>
     );
 
-    const ServerStatus = () => {
-        const [status, setStatus] = useState('checking');
-
-        useEffect(() => {
-            const checkServer = async () => {
-                try {
-                    const response = await fetch(`${API_CONFIG.baseUrl}/api/health`);
-                    if (response.ok) {
-                        setStatus('online');
-                    } else {
-                        setStatus('error');
-                    }
-                } catch (err) {
-                    setStatus('offline');
-                }
-            };
-
-            checkServer();
-            const interval = setInterval(checkServer, 30000); // Check every 30 seconds
-            return () => clearInterval(interval);
-        }, []);
-
-        return (
-            <div className="fixed bottom-4 right-4 flex items-center gap-2 bg-gray-800/80 backdrop-blur-sm px-4 py-2 rounded-full">
-                <div className={`w-2 h-2 rounded-full ${
-                    status === 'online' ? 'bg-green-400' :
-                    status === 'offline' ? 'bg-red-400' :
-                    status === 'error' ? 'bg-yellow-400' :
-                    'bg-gray-400 animate-pulse'
-                }`} />
-                <span className="text-sm text-white">
-                    Server: {status.charAt(0).toUpperCase() + status.slice(1)}
-                </span>
-            </div>
-        );
-    };
-
     return (
-        <div className="min-h-screen bg-[#121212] text-white">
+        <div className={cn(
+            "min-h-screen",
+            "bg-white dark:bg-[#121212]",
+            "text-gray-900 dark:text-gray-100"
+        )}>
             {/* Modern Header */}
             <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                 <div className="container flex h-14 max-w-screen-2xl items-center">
@@ -1396,10 +1713,20 @@ export default function ProModeContent() {
             <main className="container max-w-screen-lg mx-auto px-4 py-8">
                 {/* Company Info Card */}
                 {companyData && (
-                    <div className="mb-8 p-4 bg-gray-800/30 rounded-lg border border-gray-700/50 backdrop-blur-sm">
+                    <div className={cn(
+                        "mb-8 p-4 rounded-lg border backdrop-blur-sm",
+                        "bg-gray-50/30 dark:bg-gray-800/30",
+                        "border-gray-200/50 dark:border-gray-700/50"
+                    )}>
                         <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-semibold text-purple-400">Company Information</h3>
-                            <span className="px-2 py-1 text-xs rounded-full bg-purple-500/20 text-purple-300">
+                            <h3 className="text-lg font-semibold text-purple-600 dark:text-purple-400">
+                                Company Information
+                            </h3>
+                            <span className={cn(
+                                "px-2 py-1 text-xs rounded-full",
+                                "bg-purple-100 dark:bg-purple-900/30",
+                                "text-purple-700 dark:text-purple-300"
+                            )}>
                                 Active Analysis
                             </span>
                         </div>
@@ -1417,7 +1744,11 @@ export default function ProModeContent() {
                                 <a href={companyData.website_url} 
                                    target="_blank" 
                                    rel="noopener noreferrer"
-                                   className="text-blue-400 hover:text-blue-300">
+                                   className={cn(
+                                       "text-blue-400 hover:text-blue-300",
+                                       "text-gray-200 dark:text-gray-700"
+                                   )}
+                                >
                                     {companyData.website_url}
                                 </a>
                             </div>
@@ -1431,9 +1762,12 @@ export default function ProModeContent() {
                         {['Detail Level', 'Report Type', 'Questions', 'Report'].map((label, idx) => (
                             <div 
                                 key={label}
-                                className={`flex items-center space-x-2 ${
-                                    idx + 1 === step ? 'text-purple-400' : 'text-gray-500'
-                                }`}
+                                className={cn(
+                                    "flex items-center space-x-2",
+                                    idx + 1 === step 
+                                        ? "text-purple-600 dark:text-purple-400" 
+                                        : "text-gray-500 dark:text-gray-500"
+                                )}
                             >
                                 {idx + 1 === 1 && <Target className="w-4 h-4" />}
                                 {idx + 1 === 2 && <ChartBar className="w-4 h-4" />}
@@ -1443,9 +1777,12 @@ export default function ProModeContent() {
                             </div>
                         ))}
                     </div>
-                    <div className="h-2 bg-gray-800 rounded-full">
+                    <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full">
                         <div 
-                            className="h-full bg-gradient-to-r from-purple-600 to-pink-600 rounded-full transition-all duration-300"
+                            className={cn(
+                                "h-full rounded-full transition-all duration-300",
+                                "bg-gradient-to-r from-purple-600 to-pink-600"
+                            )}
                             style={{ width: `${(step/4) * 100}%` }}
                         />
                     </div>
@@ -1453,7 +1790,12 @@ export default function ProModeContent() {
 
                 {/* Error Display */}
                 {error && (
-                    <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+                    <div className={cn(
+                        "mb-6 p-4 rounded-lg",
+                        "bg-red-50/10 dark:bg-red-900/20",
+                        "border border-red-200/20 dark:border-red-700/20",
+                        "text-red-700 dark:text-red-300"
+                    )}>
                         <div className="flex items-center space-x-2 text-red-400">
                             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" />
@@ -1464,7 +1806,11 @@ export default function ProModeContent() {
                 )}
 
                 {/* Main Content Area */}
-                <div className="bg-gray-800/30 rounded-lg border border-gray-700/50 backdrop-blur-sm">
+                <div className={cn(
+                    "rounded-lg border backdrop-blur-sm",
+                    "bg-gray-50/30 dark:bg-gray-800/30",
+                    "border-gray-200/50 dark:border-gray-700/50"
+                )}>
                     {!loading ? (
                         <div className="p-6">
                             {step === 1 && <DetailLevelSelection />}
@@ -1475,14 +1821,23 @@ export default function ProModeContent() {
                     ) : (
                         <div className="flex items-center justify-center py-12">
                             <div className="flex flex-col items-center space-y-4">
-                                <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
-                                <p className="text-gray-400">Processing your request...</p>
+                                <Loader2 className="w-8 h-8 animate-spin text-purple-600 dark:text-purple-400" />
+                                <p className="text-gray-600 dark:text-gray-400">Processing your request...</p>
                             </div>
                         </div>
                     )}
                 </div>
             </main>
-            <ServerStatus />
+
+            {/* Competitor Status */}
+            <div className={cn(
+                "fixed bottom-4 right-4",
+                "bg-white/80 dark:bg-gray-800/80",
+                "backdrop-blur-sm rounded-lg shadow-lg",
+                "p-4 border border-gray-200/50 dark:border-gray-700/50"
+            )}>
+                <CompetitorStatus />
+            </div>
         </div>
     );
 }
